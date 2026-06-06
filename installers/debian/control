@@ -1,0 +1,15 @@
+Source: beforepaste
+Section: utils
+Priority: optional
+Maintainer: BeforeWire
+Build-Depends: debhelper-compat (= 13), cargo, rustc
+Standards-Version: 4.6.2
+Homepage: https://github.com/beforewire/beforepaste
+
+Package: beforepaste
+Architecture: amd64 arm64
+Depends: libx11-6, libxcb1, libxkbcommon0, libgtk-3-0, ${shlibs:Depends}, ${misc:Depends}
+Description: Local clipboard protection for AI prompts
+ BeforePaste watches AI paste targets and redacts API keys, tokens, private
+ keys, and PII before they reach an AI prompt. It also includes an explicit
+ trigger command for one-shot clipboard redaction.

@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Do not run `beforepaste init` here: Debian maintainer scripts run as
+        # root, while BeforePaste config and shortcuts are per-user.
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        exit 0
+        ;;
+esac

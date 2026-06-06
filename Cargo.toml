@@ -1,0 +1,88 @@
+[package]
+name = "beforepaste"
+version = "0.1.0"
+edition = "2021"
+default-run = "beforepaste"
+description = "Local clipboard protection for AI prompts"
+authors = ["BeforeWire"]
+license = "MIT"
+repository = "https://github.com/beforewire/beforepaste"
+homepage = "https://beforepaste.com"
+readme = "README.md"
+keywords = ["security", "clipboard", "secrets", "pii", "redaction"]
+categories = ["command-line-utilities", "cryptography"]
+exclude = [
+    ".github/**",
+    "desktop/**",
+    "installers/**",
+    "scripts/**",
+    "vscode-extension/**",
+    "web/**",
+]
+
+[lib]
+name = "beforepaste"
+path = "src/lib.rs"
+
+[[bin]]
+name = "beforepaste"
+path = "src/main.rs"
+
+# Maintainer tool: regenerates DETECTION_COVERAGE.md from the live pattern
+# catalog. Gated behind a feature so `cargo install beforepaste` does NOT
+# install it on end-user machines. Run locally with `just patterns-doc`.
+[[bin]]
+name = "patterns_doc"
+path = "src/bin/patterns_doc.rs"
+required-features = ["patterns-doc"]
+
+[features]
+patterns-doc = []
+
+[dependencies]
+arboard = { version = "3.6.1", features = ["wayland-data-control"] }
+regex = "1.12.3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+toml = "1.1.2"
+clap = { version = "4.6.1", features = ["derive"] }
+ratatui = "0.30"
+crossterm = "0.29"
+notify-rust = "4.17.0"
+dirs = "6.0.0"
+log = "0.4.29"
+env_logger = { version = "0.11.10", default-features = false }
+anyhow = "1.0.102"
+ureq = { version = "3.3.0", default-features = false, features = ["rustls", "json"] }
+zeroize = { version = "1.8.2", features = ["std"] }
+semver = "1.0.28"
+tempfile = "3.27.0"
+sha2 = "0.11.0"
+chrono = { version = "0.4.44", default-features = false, features = ["std", "serde"] }
+portable-pty = "0.9.0"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.25.0"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+
+[dev-dependencies]
+proptest = "1.11.0"
+serial_test = "3.4.0"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+# The regex engine is the per-press hot path; speed-optimize just its codegen
+# without inflating the size-tuned app crate. Confirm the stripped-binary
+# delta with `cargo bloat --release --crates`.
+[profile.release.package."regex"]
+opt-level = 3
+
+[profile.release.package."regex-automata"]
+opt-level = 3

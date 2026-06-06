@@ -1,0 +1,7 @@
+[Unit]
+Description=BeforePaste daily update check
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/beforepaste upgrade-check
+Nice=10

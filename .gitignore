@@ -1,0 +1,16 @@
+node_modules/
+vscode-extension/out/
+vscode-extension/.vscode-test/
+vscode-extension/*.vsix
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+.wrangler/
+.env
+.dev.vars
+dist/
+*.gen.js
+/target
+*.log
+scorecard.png
+.claude/
+.impeccable/

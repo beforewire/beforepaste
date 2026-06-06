@@ -1,0 +1,46 @@
+{
+  "name": "beforepaste",
+  "displayName": "BeforePaste",
+  "description": "Publishes active VS Code terminal AI CLI state for BeforePaste desktop target detection.",
+  "version": "0.1.0",
+  "publisher": "beforewire",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/beforewire/beforepaste.git",
+    "directory": "vscode-extension"
+  },
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "beforepaste.refreshTerminalState",
+        "title": "BeforePaste: Refresh Terminal State"
+      },
+      {
+        "command": "beforepaste.showTerminalBridgeStatus",
+        "title": "BeforePaste: Show Terminal Bridge Status"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.96.0",
+    "@vscode/vsce": "^2.32.0",
+    "typescript": "^5.6.3"
+  }
+}

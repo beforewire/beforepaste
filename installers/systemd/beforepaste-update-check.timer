@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily BeforePaste update check
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1h
+Unit=beforepaste-update-check.service
+
+[Install]
+WantedBy=timers.target

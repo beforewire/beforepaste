@@ -1,0 +1,352 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish, e.g. v1.2.3. In dry-run mode this may be any ref; when empty, the selected workflow ref is used."
+        required: false
+      dry_run:
+        description: "Build on release runners and upload workflow artifacts without creating or publishing a GitHub release."
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+
+jobs:
+  create-release:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dry-run mode
+        if: env.DRY_RUN == 'true'
+        run: |
+          echo "Dry-run validation: building artifacts from ref '$RELEASE_TAG' without creating a GitHub release."
+
+      - name: Create draft release if missing
+        if: env.DRY_RUN != 'true'
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; reusing it."
+          else
+            gh release create "$RELEASE_TAG" \
+              --draft \
+              --title "$RELEASE_TAG" \
+              --generate-notes
+          fi
+
+  build:
+    needs: create-release
+    name: ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: beforepaste-linux-x86_64
+            ext: ""
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            asset: beforepaste-linux-aarch64
+            ext: ""
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            asset: beforepaste-macos-x86_64
+            ext: ""
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset: beforepaste-macos-aarch64
+            ext: ""
+          - os: windows-2025-vs2026
+            target: x86_64-pc-windows-msvc
+            asset: beforepaste-windows-x86_64.exe
+            ext: ".exe"
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            asset: beforepaste-windows-aarch64.exe
+            ext: ".exe"
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxcb1-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libdbus-1-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry and target dir
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Stage artifact (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/beforepaste${{ matrix.ext }}" "dist/${{ matrix.asset }}"
+          chmod +x "dist/${{ matrix.asset }}"
+
+      - name: Stage artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/beforepaste${{ matrix.ext }}" "dist/${{ matrix.asset }}"
+
+      - name: Upload asset to release
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        run: gh release upload "$RELEASE_TAG" "dist/${{ matrix.asset }}" --clobber
+
+      - name: Upload dry-run CLI artifact
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+
+  desktop-build:
+    needs: create-release
+    name: desktop-${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            bundles: deb,rpm,appimage
+          - os: ubuntu-24.04-arm
+            platform: linux-aarch64
+            bundles: deb,rpm,appimage
+          - os: windows-2025-vs2026
+            platform: windows-x86_64
+            bundles: nsis,msi
+          - os: windows-11-arm
+            platform: windows-aarch64
+            bundles: nsis,msi
+          - os: macos-latest
+            platform: macos
+            bundles: app,dmg
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target dir
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-release-${{ matrix.platform }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build desktop bundles
+        working-directory: desktop
+        run: npm run tauri -- build --bundles ${{ matrix.bundles }}
+
+      - name: Stage Linux desktop artifacts
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p dist
+          bundle_dir="desktop/src-tauri/target/release/bundle"
+          find "$bundle_dir" -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) -print0 |
+            while IFS= read -r -d '' file; do
+              case "$file" in
+                *.deb) ext="deb" ;;
+                *.rpm) ext="rpm" ;;
+                *.AppImage) ext="AppImage" ;;
+                *) continue ;;
+              esac
+              cp "$file" "dist/beforepaste-desktop-${{ matrix.platform }}.${ext}"
+              if [ "$ext" = "AppImage" ]; then
+                chmod +x "dist/beforepaste-desktop-${{ matrix.platform }}.${ext}"
+              fi
+            done
+          if ! compgen -G 'dist/beforepaste-desktop-*' >/dev/null; then
+            echo "No Linux desktop artifacts were staged" >&2
+            exit 1
+          fi
+          ls -lh dist
+
+      - name: Stage Windows desktop artifacts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Get-ChildItem "desktop/src-tauri/target/release/bundle" -Recurse -File |
+            Where-Object { $_.Extension -in @(".msi", ".exe") } |
+            ForEach-Object {
+              if ($_.Extension -eq ".msi") {
+                $name = "beforepaste-desktop-${{ matrix.platform }}.msi"
+              } else {
+                $name = "beforepaste-desktop-${{ matrix.platform }}-setup.exe"
+              }
+              Copy-Item $_.FullName "dist/$name" -Force
+            }
+          if (-not (Get-ChildItem dist -Filter "beforepaste-desktop-*")) {
+            throw "No Windows desktop artifacts were staged"
+          }
+          Get-ChildItem dist
+
+      - name: Stage macOS desktop artifacts
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p dist
+          bundle_dir="desktop/src-tauri/target/release/bundle"
+          shopt -s nullglob
+          dmgs=("$bundle_dir"/dmg/*.dmg)
+          if [ "${#dmgs[@]}" -eq 0 ]; then
+            echo "No macOS DMG artifacts were staged" >&2
+            exit 1
+          fi
+          cp "${dmgs[0]}" "dist/beforepaste-desktop-${{ matrix.platform }}.dmg"
+          ls -lh dist
+
+      - name: Upload desktop assets to release
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        run: gh release upload "$RELEASE_TAG" dist/beforepaste-desktop-* --clobber
+
+      - name: Upload dry-run desktop artifacts
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: beforepaste-desktop-${{ matrix.platform }}
+          path: dist/beforepaste-desktop-*
+
+  checksums:
+    needs: [build, desktop-build]
+    name: Publish SHA256SUMS
+    if: github.event_name != 'workflow_dispatch' || inputs.dry_run == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all release assets
+        run: |
+          mkdir -p dist
+          cd dist
+          gh release download "$RELEASE_TAG" --pattern 'beforepaste-*' --clobber
+
+      - name: Compute SHA256SUMS
+        working-directory: dist
+        run: |
+          sha256sum beforepaste-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload SHA256SUMS
+        working-directory: dist
+        run: gh release upload "$RELEASE_TAG" SHA256SUMS --clobber
+
+  publish-crate:
+    needs: checksums
+    name: Publish to crates.io
+    if: github.event_name != 'workflow_dispatch' || inputs.dry_run == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for crates.io token
+        id: check
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [[ -z "${CARGO_REGISTRY_TOKEN:-}" ]]; then
+            echo "::notice::CARGO_REGISTRY_TOKEN not set - skipping crates.io publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.check.outputs.skip == 'false'
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Linux system dependencies
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxcb1-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libdbus-1-dev
+
+      - name: Install Rust toolchain
+        if: steps.check.outputs.skip == 'false'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target dir
+        if: steps.check.outputs.skip == 'false'
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: publish-crate
+
+      - name: Publish
+        if: steps.check.outputs.skip == 'false'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish
+
+  publish-release:
+    needs: publish-crate
+    name: Flip draft to published
+    if: github.event_name != 'workflow_dispatch' || inputs.dry_run == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark release as published
+        run: gh release edit "$RELEASE_TAG" --draft=false

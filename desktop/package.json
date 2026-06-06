@@ -1,0 +1,19 @@
+{
+  "name": "@beforewire/beforepaste-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:no-bundle": "tauri build --no-bundle",
+    "build:linux": "tauri build --bundles deb,rpm,appimage",
+    "build:windows": "tauri build --bundles nsis,msi",
+    "build:macos": "tauri build --bundles app,dmg",
+    "icons": "tauri icon src-tauri/icons/icon.png"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.2"
+  }
+}

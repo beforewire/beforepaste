@@ -1,0 +1,23 @@
+[package]
+name = "beforepaste-desktop"
+version = "0.1.0"
+edition = "2021"
+authors = ["BeforeWire"]
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2.5.1", features = [] }
+
+[dependencies]
+beforepaste = { path = "../.." }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+tauri = { version = "2.11.2", features = ["tray-icon"] }
+tauri-plugin-updater = "2.10.1"
+toml = "1.1.2"
+anyhow = "1.0.102"
+tauri-plugin-global-shortcut = "2.3.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10.1"
+core-graphics = "0.25.0"

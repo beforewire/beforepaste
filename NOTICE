@@ -1,0 +1,16 @@
+BeforePaste
+
+BeforePaste includes code and detection coverage derived from secret-stripper:
+
+  https://github.com/kalix127/secret-stripper
+
+Original author:
+
+  Copyright (c) 2026 Gianluca Iavicoli <info@gianlucaiavicoli.dev>
+
+The derived portions are licensed under the MIT License. The full license text
+is included in LICENSE.
+
+BeforePaste is an independent fork and product. It does not use the
+secret-stripper name, logo, release assets, website, or GitHub project identity
+as user-facing branding.

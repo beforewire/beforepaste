@@ -1,0 +1,438 @@
+:root {
+  color-scheme: light dark;
+  --mac-font:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial,
+    sans-serif;
+  --mac-bg: #ececf0;
+  --mac-sidebar: rgba(246, 246, 247, 0.82);
+  --mac-panel: #ffffff;
+  --mac-panel-strong: #f8f8fa;
+  --mac-text: #1d1d1f;
+  --mac-muted: #6e6e73;
+  --mac-separator: rgba(60, 60, 67, 0.18);
+  --mac-control: #f6f6f7;
+  --mac-control-border: rgba(60, 60, 67, 0.22);
+  --mac-accent: #0a84ff;
+  --mac-focus: rgba(10, 132, 255, 0.34);
+  --mac-radius: 8px;
+  --mac-row-height: 54px;
+  --mac-row-compact: 46px;
+  --mac-space-xs: 4px;
+  --mac-space-sm: 8px;
+  --mac-space-md: 12px;
+  --mac-space-lg: 16px;
+  --mac-space-xl: 24px;
+  --mac-shadow: 0 18px 45px rgba(0, 0, 0, 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mac-bg: #1f1f22;
+    --mac-sidebar: rgba(44, 44, 46, 0.86);
+    --mac-panel: #2c2c2e;
+    --mac-panel-strong: #343438;
+    --mac-text: #f5f5f7;
+    --mac-muted: #a1a1a6;
+    --mac-separator: rgba(235, 235, 245, 0.16);
+    --mac-control: #3a3a3c;
+    --mac-control-border: rgba(235, 235, 245, 0.18);
+    --mac-shadow: 0 18px 45px rgba(0, 0, 0, 0.34);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--mac-bg);
+  color: var(--mac-text);
+  font-family: var(--mac-font);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+.bp-window {
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 198px minmax(0, 1fr);
+  background: var(--mac-bg);
+  overflow: hidden;
+}
+
+.bp-sidebar {
+  min-width: 0;
+  padding: 20px 10px;
+  background: var(--mac-sidebar);
+  border-right: 1px solid var(--mac-separator);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+
+.bp-content {
+  min-width: 0;
+  overflow: auto;
+  padding: 24px 28px 18px;
+}
+
+.bp-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  margin-bottom: 18px;
+}
+
+.bp-toolbar h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.bp-status {
+  min-height: 20px;
+  color: var(--mac-accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.bp-value {
+  min-width: 46px;
+  min-height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(10, 132, 255, 0.12);
+  color: var(--mac-accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bp-app-title {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 0 8px 16px;
+}
+
+.bp-app-title strong,
+.bp-app-title span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bp-app-title strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bp-app-title span {
+  color: var(--mac-muted);
+  font-size: 12px;
+}
+
+.bp-app-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #1f6f62, #164c45);
+  color: white;
+  font-size: 15px;
+  font-weight: 800;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.24);
+}
+
+.bp-nav {
+  display: grid;
+  gap: 2px;
+}
+
+.bp-nav-item {
+  width: 100%;
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 9px;
+  background: transparent;
+  text-align: left;
+  cursor: default;
+}
+
+.bp-nav-item:hover {
+  background: rgba(120, 120, 128, 0.12);
+}
+
+.bp-nav-item.is-active {
+  background: rgba(120, 120, 128, 0.22);
+}
+
+.bp-nav-icon {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: rgba(120, 120, 128, 0.16);
+  color: var(--mac-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.bp-panel {
+  display: none;
+  max-width: 660px;
+}
+
+.bp-panel.is-active {
+  display: grid;
+  gap: var(--mac-space-md);
+}
+
+.bp-settings-group {
+  overflow: hidden;
+  border: 1px solid var(--mac-separator);
+  border-radius: var(--mac-radius);
+  background: var(--mac-panel);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.38);
+}
+
+.bp-setting-row {
+  min-height: var(--mac-row-height);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--mac-space-lg);
+  align-items: center;
+  padding: 10px 14px;
+  border-top: 1px solid var(--mac-separator);
+}
+
+.bp-setting-row-compact {
+  min-height: var(--mac-row-compact);
+  padding-block: 7px;
+}
+
+.bp-setting-row:first-child {
+  border-top: 0;
+}
+
+.bp-setting-row strong,
+.bp-setting-row small {
+  display: block;
+}
+
+.bp-setting-row strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bp-setting-row small {
+  max-width: 420px;
+  margin-top: 2px;
+  color: var(--mac-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.bp-switch {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  display: inline-block;
+}
+
+.bp-switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.bp-switch span {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: rgba(120, 120, 128, 0.32);
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.bp-switch span::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
+  transition: transform 120ms ease;
+}
+
+.bp-switch input:checked + span {
+  background: var(--mac-accent);
+}
+
+.bp-switch input:checked + span::after {
+  transform: translateX(18px);
+}
+
+.bp-switch input:focus-visible + span {
+  box-shadow: 0 0 0 4px var(--mac-focus);
+}
+
+.bp-switch input:disabled + span {
+  opacity: 0.68;
+}
+
+.bp-text-field,
+.bp-select {
+  width: 220px;
+  min-height: 28px;
+  border: 1px solid var(--mac-control-border);
+  border-radius: 6px;
+  padding: 0 9px;
+  background: var(--mac-control);
+  color: var(--mac-text);
+  outline: none;
+}
+
+.bp-text-field:focus,
+.bp-select:focus {
+  border-color: var(--mac-accent);
+  box-shadow: 0 0 0 3px var(--mac-focus);
+}
+
+.bp-range {
+  width: 180px;
+  accent-color: var(--mac-accent);
+}
+
+.bp-segmented {
+  display: inline-flex;
+  overflow: hidden;
+  min-height: 28px;
+  border: 1px solid var(--mac-control-border);
+  border-radius: 6px;
+  background: var(--mac-control);
+}
+
+.bp-segmented button {
+  min-width: 62px;
+  border: 0;
+  border-left: 1px solid var(--mac-control-border);
+  padding: 0 10px;
+  background: transparent;
+  color: var(--mac-text);
+  cursor: default;
+}
+
+.bp-segmented button:first-child {
+  border-left: 0;
+}
+
+.bp-segmented button:hover,
+.bp-segmented button.is-selected {
+  background: rgba(120, 120, 128, 0.18);
+}
+
+.bp-button-row,
+.bp-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.bp-footer {
+  max-width: 660px;
+  margin-top: 4px;
+  padding-top: 14px;
+}
+
+.bp-button {
+  min-height: 30px;
+  border: 1px solid var(--mac-control-border);
+  border-radius: 6px;
+  padding: 0 14px;
+  background: var(--mac-control);
+  color: var(--mac-text);
+  cursor: default;
+}
+
+.bp-button:hover {
+  filter: brightness(0.98);
+}
+
+.bp-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--mac-focus);
+}
+
+.bp-button.is-default {
+  border-color: rgba(10, 132, 255, 0.72);
+  background: var(--mac-accent);
+  color: white;
+}
+
+@media (max-width: 640px) {
+  .bp-window {
+    grid-template-columns: 1fr;
+  }
+
+  .bp-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--mac-separator);
+  }
+
+  .bp-nav {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .bp-nav-item {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .bp-content {
+    padding: 22px 18px;
+  }
+
+  .bp-setting-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .bp-text-field,
+  .bp-select,
+  .bp-range {
+    width: 100%;
+  }
+}
