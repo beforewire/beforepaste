@@ -245,7 +245,7 @@ fn assignment_context(text: &str, s: usize, e: usize) -> Option<AssignmentContex
         return None;
     }
     let span_touches_key = s <= eq;
-    if !span_touches_key && !(value_start <= s && e <= value_end) {
+    if !(span_touches_key || (value_start <= s && e <= value_end)) {
         return None;
     }
     Some(AssignmentContext {

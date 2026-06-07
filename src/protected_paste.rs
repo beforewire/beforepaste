@@ -1,8 +1,11 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
+#[cfg(target_os = "macos")]
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(target_os = "macos")]
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -14,15 +17,19 @@ use crate::detector::Detector;
 use crate::notify;
 use crate::redact_cli;
 use crate::stats;
+#[cfg(target_os = "macos")]
 use crate::targets::{self, TargetSurface};
 
 const TARGET_CACHE_FILE: &str = "target-state.json";
 const MAX_INPUT_BYTES: usize = 1024 * 1024;
 const RESTORE_DELAY: Duration = Duration::from_millis(900);
+#[cfg(target_os = "macos")]
 const AI_PROCESS_SCAN_CACHE_MS: u64 = 2_000;
 static SYSTEM_PASTE_BYPASS_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_os = "macos")]
 static AI_PROCESS_CWD_CACHE: OnceLock<Mutex<AiProcessCwdCache>> = OnceLock::new();
 
+#[cfg(target_os = "macos")]
 #[derive(Debug, Clone, Default)]
 struct AiProcessCwdCache {
     updated_at_ms: u64,
@@ -36,6 +43,7 @@ struct TargetSnapshot {
     expires_at: u64,
 }
 
+#[cfg(target_os = "macos")]
 #[derive(Debug, Clone, Deserialize)]
 struct TerminalTarget {
     kind: String,
@@ -386,6 +394,7 @@ fn host_of(url: &str) -> Option<String> {
     Some(host.to_lowercase())
 }
 
+#[cfg(target_os = "macos")]
 fn terminal_ai_cli(title: &str) -> Option<&'static str> {
     let normalized = title.trim().to_ascii_lowercase();
     if let Some(rest) = normalized.strip_prefix("beforepaste:") {
@@ -530,6 +539,7 @@ fn normalize_path(path: &str) -> String {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn active_terminal_by_id(terminal_app: &str, terminal_id: &str) -> Option<TerminalTarget> {
     active_terminal(|target| {
         target.terminal_app.as_deref() == Some(terminal_app)
@@ -537,18 +547,22 @@ fn active_terminal_by_id(terminal_app: &str, terminal_id: &str) -> Option<Termin
     })
 }
 
+#[cfg(target_os = "macos")]
 fn active_terminal_by_app(terminal_app: &str) -> Option<TerminalTarget> {
     active_terminal(|target| target.terminal_app.as_deref() == Some(terminal_app))
 }
 
+#[cfg(target_os = "macos")]
 fn active_terminal_by_title(title: &str) -> Option<TerminalTarget> {
     active_terminal(|target| title_matches_cwd(title, &target.cwd))
 }
 
+#[cfg(target_os = "macos")]
 fn read_terminal_target_by_tty(tty: &str) -> Option<TerminalTarget> {
     read_terminal_target_path(state_path(tty))
 }
 
+#[cfg(target_os = "macos")]
 fn active_terminal(mut predicate: impl FnMut(&TerminalTarget) -> bool) -> Option<TerminalTarget> {
     let entries = fs::read_dir(states_dir()).ok()?;
     let mut matches = Vec::new();
@@ -570,6 +584,7 @@ fn active_terminal(mut predicate: impl FnMut(&TerminalTarget) -> bool) -> Option
     }
 }
 
+#[cfg(target_os = "macos")]
 fn read_terminal_target_path(path: PathBuf) -> Option<TerminalTarget> {
     let target: TerminalTarget = serde_json::from_str(&fs::read_to_string(path).ok()?).ok()?;
     if target.expires_at <= now_secs() {
@@ -579,20 +594,24 @@ fn read_terminal_target_path(path: PathBuf) -> Option<TerminalTarget> {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn state_path(tty: &str) -> PathBuf {
     states_dir().join(format!("{}.json", state_key(tty)))
 }
 
+#[cfg(target_os = "macos")]
 fn states_dir() -> PathBuf {
     config::base_dir().join("terminal-targets")
 }
 
+#[cfg(target_os = "macos")]
 fn state_key(tty: &str) -> String {
     tty.chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect()
 }
 
+#[cfg(target_os = "macos")]
 fn title_matches_cwd(title: &str, cwd: &str) -> bool {
     let title = title.trim();
     if title.is_empty() {
