@@ -29,16 +29,18 @@ Use it when you want:
 ## Status
 
 BeforePaste is under active development. The macOS desktop tray app is the
-primary product path today. The CLI, pipeline redactor, terminal paste guard,
-and VS Code terminal bridge are available for development and advanced use.
+primary published product path today. Windows and Linux tray support is in
+source-level development, with Ctrl+V smart paste wired for VS Code AI terminal
+targets. The CLI, pipeline redactor, terminal paste guard, and VS Code terminal
+bridge are available for development and advanced use.
 
 Platform scope today:
 
 | Platform | Desktop tray | Normal paste protection | Safe paste shortcut | CLI |
 |---|---:|---:|---:|---:|
 | macOS | Yes | `Cmd+V` in AI targets | `Cmd+Ctrl+V` | Yes |
-| Windows | Source/dev only | Not yet | CLI only | Yes |
-| Linux | Source/dev only | Not yet | CLI only | Yes |
+| Windows | Source/dev only | `Ctrl+V` for VS Code AI terminals | `Ctrl+Alt+V` | Yes |
+| Linux | Source/dev only | `Ctrl+V` for VS Code AI terminals | `Ctrl+Alt+V` | Yes |
 
 ## Install
 
@@ -148,12 +150,14 @@ be granted while the selected paste mode is still off or needs attention.
 
 | Mode | Shortcut | Behavior |
 |---|---|---|
-| Advanced | `Cmd+V` on macOS | Intercepts normal paste, checks whether the frontmost target is an AI target, redacts only for AI targets, then pastes. |
-| Safe Paste Shortcut Only | `Cmd+Ctrl+V` on macOS | Leaves normal `Cmd+V` alone. The explicit shortcut always pastes a protected copy of the clipboard. |
+| Advanced | `Cmd+V` on macOS, `Ctrl+V` on Windows/Linux desktop builds | Intercepts normal paste, checks whether the current target is an enabled AI target, redacts only for AI targets, then pastes. |
+| Safe Paste Shortcut Only | `Cmd+Ctrl+V` on macOS, `Ctrl+Alt+V` on Windows/Linux | Leaves normal paste alone. The explicit shortcut always pastes a protected copy of the clipboard. |
 
-Advanced mode is the recommended default for macOS because it protects the
-normal paste habit in AI targets. Safe Paste Shortcut Only is useful when you
-want an explicit action and no normal paste interception.
+Advanced mode is the recommended default because it protects the normal paste
+habit in AI targets. On Windows/Linux source desktop builds, Advanced mode is
+currently limited to targets published by the VS Code extension or a manual
+target override. Safe Paste Shortcut Only is useful when you want an explicit
+action and no normal paste interception.
 
 ## Desktop Tray
 
@@ -190,6 +194,11 @@ Supported target types:
 - Terminal AI CLIs, including Codex, Claude, Gemini, aider, Continue, and
   opencode.
 - VS Code integrated terminals through the BeforePaste VS Code extension.
+
+Native app and browser-tab detection are macOS-first today. Windows/Linux
+desktop development builds use VS Code extension state and manual target
+overrides for smart `Ctrl+V`; if no AI target is known, BeforePaste passes
+through to normal paste.
 
 Browser matching is positive-only. If BeforePaste cannot read the active tab URL
 or cannot confirm an AI target, it performs a normal paste. This avoids

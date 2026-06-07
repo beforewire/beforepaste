@@ -106,6 +106,8 @@ struct RuntimeStatus {
     permissions: PermissionStatus,
     beforepaste_enabled: bool,
     protect_normal_paste: bool,
+    normal_paste_hotkey: String,
+    normal_paste_hotkey_registered: bool,
     normal_paste_event_tap_started: bool,
     normal_paste_event_tap_installed: bool,
     force_paste_hotkey: String,
@@ -117,9 +119,11 @@ struct RuntimeStatus {
 struct AppState {
     engine: Arc<Mutex<protected_paste::Engine>>,
     target: Arc<Mutex<Option<String>>>,
+    normal_paste_hotkey: Mutex<String>,
     force_paste_hotkey: Mutex<String>,
     beforepaste_enabled: AtomicBool,
     protect_normal_paste: AtomicBool,
+    normal_paste_running: AtomicBool,
     normal_paste_event_tap_started: AtomicBool,
     normal_paste_event_tap_installed: AtomicBool,
     tray_menu: Mutex<Option<TrayMenuState>>,
@@ -159,7 +163,10 @@ fn install_vscode_bridge() -> Result<VscodeBridgeStatus, String> {
         return Err("BeforePaste VS Code extension package was not found.".to_string());
     };
     let Some(code) = find_code_cli() else {
-        return Err("VS Code 'code' command was not found. Install it from VS Code Command Palette first.".to_string());
+        return Err(
+            "VS Code 'code' command was not found. Install it from VS Code Command Palette first."
+                .to_string(),
+        );
     };
     let output = Command::new(code)
         .arg("--install-extension")
@@ -183,9 +190,15 @@ fn open_privacy_settings(kind: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let url = match kind.as_str() {
-            "accessibility" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-            "input_monitoring" => "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent",
-            "automation" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
+            "accessibility" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            }
+            "input_monitoring" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+            }
+            "automation" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
+            }
             _ => "x-apple.systempreferences:com.apple.preference.security?Privacy",
         };
         Command::new("/usr/bin/open")
@@ -217,6 +230,16 @@ fn runtime_status(app: &tauri::AppHandle, state: &Arc<AppState>) -> RuntimeStatu
         && app
             .global_shortcut()
             .is_registered(force_paste_hotkey.as_str());
+    let normal_paste_hotkey = state
+        .normal_paste_hotkey
+        .lock()
+        .ok()
+        .map(|value| value.clone())
+        .unwrap_or_else(normal_paste_hotkey);
+    let normal_paste_hotkey_registered = !normal_paste_hotkey.is_empty()
+        && app
+            .global_shortcut()
+            .is_registered(normal_paste_hotkey.as_str());
     let current_target = state
         .target
         .lock()
@@ -229,6 +252,8 @@ fn runtime_status(app: &tauri::AppHandle, state: &Arc<AppState>) -> RuntimeStatu
         permissions: permission_status(),
         beforepaste_enabled: state.beforepaste_enabled.load(Ordering::SeqCst),
         protect_normal_paste: state.protect_normal_paste.load(Ordering::SeqCst),
+        normal_paste_hotkey,
+        normal_paste_hotkey_registered,
         normal_paste_event_tap_started: state.normal_paste_event_tap_started.load(Ordering::SeqCst),
         normal_paste_event_tap_installed: state
             .normal_paste_event_tap_installed
@@ -252,6 +277,17 @@ fn platform_name() -> &'static str {
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     {
         "linux"
+    }
+}
+
+fn normal_paste_hotkey() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        String::new()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "Control+KeyV".to_string()
     }
 }
 
@@ -284,7 +320,9 @@ fn save_config(
         "save_config protect_normal_paste={protect_normal_paste}"
     ));
     if protect_normal_paste {
-        ensure_normal_paste_event_tap(state.inner().clone()).map_err(|e| e.to_string())?;
+        ensure_normal_paste_protection(&app, state.inner().clone()).map_err(|e| e.to_string())?;
+    } else {
+        disable_normal_paste_protection(&app, state.inner());
     }
     let _ = app.emit("beforepaste-config-updated", ());
     Ok(())
@@ -296,7 +334,7 @@ fn set_normal_paste_mode(
     protect: bool,
 ) -> Result<(), String> {
     let mut config = Config::load();
-    config.protect_normal_paste = protect && cfg!(target_os = "macos");
+    config.protect_normal_paste = protect;
     let protect_normal_paste = config.protect_normal_paste;
     config.save().map_err(|e| e.to_string())?;
     state
@@ -308,7 +346,9 @@ fn set_normal_paste_mode(
         .protect_normal_paste
         .store(protect_normal_paste, Ordering::SeqCst);
     if protect_normal_paste {
-        ensure_normal_paste_event_tap(Arc::clone(&state)).map_err(|e| e.to_string())?;
+        ensure_normal_paste_protection(app, Arc::clone(&state)).map_err(|e| e.to_string())?;
+    } else {
+        disable_normal_paste_protection(app, &state);
     }
     schedule_tray_status_update(app.clone(), Arc::clone(&state), Duration::from_millis(150));
     let _ = app.emit("beforepaste-config-updated", ());
@@ -487,7 +527,13 @@ fn tray_text(lang: Lang, key: &str) -> &'static str {
 
 fn build_tray(app: &tauri::App, state: &Arc<AppState>) -> tauri::Result<()> {
     let lang = Config::load().lang;
-    let status = MenuItem::with_id(app, "status", tray_text(lang, "status_checking"), false, None::<&str>)?;
+    let status = MenuItem::with_id(
+        app,
+        "status",
+        tray_text(lang, "status_checking"),
+        false,
+        None::<&str>,
+    )?;
     let target = MenuItem::with_id(
         app,
         "target",
@@ -509,7 +555,13 @@ fn build_tray(app: &tauri::App, state: &Arc<AppState>) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?;
-    let doctor = MenuItem::with_id(app, "open_doctor", tray_text(lang, "doctor"), true, None::<&str>)?;
+    let doctor = MenuItem::with_id(
+        app,
+        "open_doctor",
+        tray_text(lang, "doctor"),
+        true,
+        None::<&str>,
+    )?;
     let advanced = CheckMenuItem::with_id(
         app,
         "mode_advanced",
@@ -529,8 +581,13 @@ fn build_tray(app: &tauri::App, state: &Arc<AppState>) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", tray_text(lang, "quit"), true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let separator2 = PredefinedMenuItem::separator(app)?;
-    let mode_menu =
-        Submenu::with_id_and_items(app, "mode", tray_text(lang, "mode"), true, &[&advanced, &safe_only])?;
+    let mode_menu = Submenu::with_id_and_items(
+        app,
+        "mode",
+        tray_text(lang, "mode"),
+        true,
+        &[&advanced, &safe_only],
+    )?;
     let menu = Menu::with_items(
         app,
         &[
@@ -646,7 +703,7 @@ fn tray_labels(status: &RuntimeStatus, state: &Arc<AppState>) -> TrayLabels {
             format!("Last target: {target}")
         },
         stats,
-        advanced_checked: status.platform == "macos" && status.protect_normal_paste,
+        advanced_checked: status.protect_normal_paste,
     }
 }
 
@@ -693,14 +750,14 @@ fn overall_status_label(status: &RuntimeStatus, cmdv: &str, safe: &str, lang: La
         };
     }
     let ready = if lang == Lang::ZH { "就绪" } else { "Ready" };
-    if status.platform == "macos" && status.protect_normal_paste && cmdv != ready {
+    if status.protect_normal_paste && cmdv != ready {
         return if lang == Lang::ZH {
             format!("BeforePaste：{cmdv}")
         } else {
             format!("BeforePaste: {cmdv}")
         };
     }
-    if status.platform == "macos" && status.protect_normal_paste {
+    if status.protect_normal_paste {
         if status.current_target.is_some() {
             if lang == Lang::ZH {
                 "BeforePaste：保护中".to_string()
@@ -725,33 +782,61 @@ fn overall_status_label(status: &RuntimeStatus, cmdv: &str, safe: &str, lang: La
 
 fn cmdv_status_label(status: &RuntimeStatus, lang: Lang) -> String {
     if !status.beforepaste_enabled {
-        return if lang == Lang::ZH { "未启用" } else { "Disabled" }.to_string();
-    }
-    if status.platform != "macos" {
-        return if lang == Lang::ZH { "不支持" } else { "Not supported" }.to_string();
+        return if lang == Lang::ZH {
+            "未启用"
+        } else {
+            "Disabled"
+        }
+        .to_string();
     }
     if !status.protect_normal_paste {
         return if lang == Lang::ZH { "关闭" } else { "Off" }.to_string();
     }
-    let mut missing = Vec::new();
-    if !status.permissions.accessibility {
-        missing.push(if lang == Lang::ZH { "辅助功能" } else { "Accessibility" });
-    }
-    if !status.permissions.input_monitoring {
-        missing.push(if lang == Lang::ZH { "输入监控" } else { "Input Monitoring" });
-    }
-    if !missing.is_empty() {
+    if status.platform == "macos" {
+        let mut missing = Vec::new();
+        if !status.permissions.accessibility {
+            missing.push(if lang == Lang::ZH {
+                "辅助功能"
+            } else {
+                "Accessibility"
+            });
+        }
+        if !status.permissions.input_monitoring {
+            missing.push(if lang == Lang::ZH {
+                "输入监控"
+            } else {
+                "Input Monitoring"
+            });
+        }
+        if !missing.is_empty() {
+            return if lang == Lang::ZH {
+                format!("缺少权限：{}", missing.join(" + "))
+            } else {
+                format!("Missing {}", missing.join(" + "))
+            };
+        }
+    } else if !status.normal_paste_hotkey_registered {
         return if lang == Lang::ZH {
-            format!("缺少权限：{}", missing.join(" + "))
+            "Ctrl+V 未注册".to_string()
         } else {
-            format!("Missing {}", missing.join(" + "))
+            "Ctrl+V not registered".to_string()
         };
     }
     if !status.normal_paste_event_tap_installed {
         return if status.normal_paste_event_tap_started {
-            if lang == Lang::ZH { "正在恢复" } else { "Installing" }.to_string()
+            if lang == Lang::ZH {
+                "正在恢复"
+            } else {
+                "Installing"
+            }
+            .to_string()
         } else {
-            if lang == Lang::ZH { "需要重启" } else { "Restart Required" }.to_string()
+            if lang == Lang::ZH {
+                "需要重启"
+            } else {
+                "Restart Required"
+            }
+            .to_string()
         };
     }
     if lang == Lang::ZH { "就绪" } else { "Ready" }.to_string()
@@ -759,7 +844,12 @@ fn cmdv_status_label(status: &RuntimeStatus, lang: Lang) -> String {
 
 fn safe_paste_status_label(status: &RuntimeStatus, lang: Lang) -> String {
     if !status.beforepaste_enabled {
-        return if lang == Lang::ZH { "未启用" } else { "Disabled" }.to_string();
+        return if lang == Lang::ZH {
+            "未启用"
+        } else {
+            "Disabled"
+        }
+        .to_string();
     }
     let hotkey = display_hotkey(&status.force_paste_hotkey);
     if status.force_paste_hotkey_registered {
@@ -779,7 +869,12 @@ fn safe_paste_status_label(status: &RuntimeStatus, lang: Lang) -> String {
 
 fn format_target_reason(reason: Option<&str>, lang: Lang) -> String {
     let Some(reason) = reason else {
-        return if lang == Lang::ZH { "当前不是 AI 目标" } else { "Not AI target" }.to_string();
+        return if lang == Lang::ZH {
+            "当前不是 AI 目标"
+        } else {
+            "Not AI target"
+        }
+        .to_string();
     };
     let mut parts = reason.split(':');
     let source = parts.next().unwrap_or_default();
@@ -800,9 +895,12 @@ fn format_target_reason(reason: Option<&str>, lang: Lang) -> String {
                 format!("{} web", target_label(kind))
             }
         }
-        "shortcut" => {
-            if lang == Lang::ZH { "安全粘贴" } else { "Safe paste" }.to_string()
+        "shortcut" => if lang == Lang::ZH {
+            "安全粘贴"
+        } else {
+            "Safe paste"
         }
+        .to_string(),
         _ => title_case(reason),
     }
 }
@@ -930,9 +1028,11 @@ fn vscode_bridge_status() -> VscodeBridgeStatus {
     let message = if installed {
         "BeforePaste VS Code extension is installed.".to_string()
     } else if vsix_path.is_some() {
-        "Install the BeforePaste VS Code extension to detect AI CLIs in integrated terminals.".to_string()
+        "Install the BeforePaste VS Code extension to detect AI CLIs in integrated terminals."
+            .to_string()
     } else {
-        "BeforePaste VS Code extension is not installed, and the local .vsix package was not found.".to_string()
+        "BeforePaste VS Code extension is not installed, and the local .vsix package was not found."
+            .to_string()
     };
     VscodeBridgeStatus {
         installed,
@@ -978,10 +1078,7 @@ fn local_vscode_vsix() -> Option<PathBuf> {
                 .map(|root| root.join("vscode-extension/beforepaste-0.1.0.vsix"))
         }),
     ];
-    candidates
-        .into_iter()
-        .flatten()
-        .find(|path| path.exists())
+    candidates.into_iter().flatten().find(|path| path.exists())
 }
 
 fn find_code_cli() -> Option<PathBuf> {
@@ -1211,6 +1308,43 @@ fn start_paste_event_tap(_state: Arc<AppState>) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn ensure_normal_paste_protection(
+    app: &tauri::AppHandle,
+    state: Arc<AppState>,
+) -> anyhow::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        ensure_normal_paste_event_tap(state)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        update_normal_paste_shortcut(app, &state, true)?;
+        state
+            .normal_paste_event_tap_started
+            .store(true, Ordering::SeqCst);
+        state
+            .normal_paste_event_tap_installed
+            .store(true, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+fn disable_normal_paste_protection(app: &tauri::AppHandle, state: &Arc<AppState>) {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = update_normal_paste_shortcut(app, state, false);
+        state
+            .normal_paste_event_tap_installed
+            .store(false, Ordering::SeqCst);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        let _ = state;
+    }
+}
+
 fn ensure_normal_paste_event_tap(state: Arc<AppState>) -> anyhow::Result<()> {
     if state
         .normal_paste_event_tap_started
@@ -1239,6 +1373,108 @@ fn handle_force_redact_paste(state: Arc<AppState>) {
             eprintln!("BeforePaste force-redact paste failed: {error}");
         }
     });
+}
+
+fn handle_normal_paste(app: tauri::AppHandle, state: Arc<AppState>) {
+    if state
+        .normal_paste_running
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        desktop_debug("normal_paste drop: already running");
+        return;
+    }
+
+    thread::spawn(move || {
+        let result = with_normal_paste_shortcut_unregistered(&app, &state, || {
+            if !state.protect_normal_paste.load(Ordering::SeqCst)
+                || !state.beforepaste_enabled.load(Ordering::SeqCst)
+            {
+                desktop_debug("normal_paste passthrough: disabled");
+                return protected_paste::emit_plain_system_paste();
+            }
+
+            let reason = state
+                .target
+                .lock()
+                .ok()
+                .and_then(|target| target.clone())
+                .or_else(protected_paste::current_target_reason);
+            let Some(reason) = reason else {
+                desktop_debug("normal_paste passthrough: no target");
+                return protected_paste::emit_plain_system_paste();
+            };
+
+            desktop_debug(&format!("normal_paste protect: target={reason}"));
+            state
+                .engine
+                .lock()
+                .map_err(|_| anyhow::anyhow!("engine cache lock poisoned"))
+                .and_then(|mut engine| engine.paste_with_cached_target(Some(reason)))
+        });
+        if let Err(error) = result {
+            eprintln!("BeforePaste normal paste failed: {error}");
+        }
+        thread::sleep(Duration::from_millis(150));
+        state.normal_paste_running.store(false, Ordering::SeqCst);
+    });
+}
+
+fn with_normal_paste_shortcut_unregistered<F>(
+    app: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    f: F,
+) -> anyhow::Result<()>
+where
+    F: FnOnce() -> anyhow::Result<()>,
+{
+    let hotkey = state
+        .normal_paste_hotkey
+        .lock()
+        .map(|hotkey| hotkey.clone())
+        .unwrap_or_default();
+    let was_registered = !hotkey.is_empty() && app.global_shortcut().is_registered(hotkey.as_str());
+    if was_registered {
+        app.global_shortcut().unregister(hotkey.as_str())?;
+    }
+    let result = f();
+    thread::sleep(Duration::from_millis(80));
+    if was_registered && state.protect_normal_paste.load(Ordering::SeqCst) {
+        if let Err(error) = app.global_shortcut().register(hotkey.as_str()) {
+            desktop_debug(&format!("normal_paste re-register failed: {error}"));
+        }
+    }
+    result
+}
+
+#[cfg(not(target_os = "macos"))]
+fn update_normal_paste_shortcut(
+    app: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    enabled: bool,
+) -> anyhow::Result<()> {
+    let hotkey = normal_paste_hotkey();
+    let mut current = state
+        .normal_paste_hotkey
+        .lock()
+        .map_err(|_| anyhow::anyhow!("normal paste shortcut lock poisoned"))?;
+    if !current.is_empty() && current.as_str() != hotkey {
+        let _ = app.global_shortcut().unregister(current.as_str());
+    }
+    if enabled {
+        if !app.global_shortcut().is_registered(hotkey.as_str()) {
+            app.global_shortcut().register(hotkey.as_str())?;
+        }
+        *current = hotkey.clone();
+        desktop_debug(&format!("normal_paste_hotkey registered={hotkey}"));
+    } else {
+        if !current.is_empty() && app.global_shortcut().is_registered(current.as_str()) {
+            let _ = app.global_shortcut().unregister(current.as_str());
+        }
+        *current = hotkey;
+        desktop_debug("normal_paste_hotkey unregistered");
+    }
+    Ok(())
 }
 
 fn update_force_paste_shortcut(
@@ -1356,12 +1592,23 @@ fn main() {
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
+                .with_handler(|app, shortcut, event| {
                     if event.state != ShortcutState::Pressed {
                         return;
                     }
                     let state = app.state::<Arc<AppState>>().inner().clone();
-                    handle_force_redact_paste(state);
+                    let pressed = (*shortcut).into_string().to_ascii_lowercase();
+                    let normal = state
+                        .normal_paste_hotkey
+                        .lock()
+                        .ok()
+                        .map(|value| value.to_ascii_lowercase())
+                        .unwrap_or_default();
+                    if !normal.is_empty() && pressed == normal {
+                        handle_normal_paste(app.clone(), state);
+                    } else {
+                        handle_force_redact_paste(state);
+                    }
                 })
                 .build(),
         )
@@ -1400,9 +1647,11 @@ fn main() {
                     config.clone(),
                 ))),
                 target: Arc::new(Mutex::new(protected_paste::current_target_reason())),
+                normal_paste_hotkey: Mutex::new(String::new()),
                 force_paste_hotkey: Mutex::new(String::new()),
                 beforepaste_enabled: AtomicBool::new(config.beforepaste_enabled),
                 protect_normal_paste: AtomicBool::new(config.protect_normal_paste),
+                normal_paste_running: AtomicBool::new(false),
                 normal_paste_event_tap_started: AtomicBool::new(false),
                 normal_paste_event_tap_installed: AtomicBool::new(false),
                 tray_menu: Mutex::new(None),
@@ -1422,7 +1671,7 @@ fn main() {
                 eprintln!("BeforePaste failed to sync launch at login: {error}");
             }
             if config.protect_normal_paste {
-                ensure_normal_paste_event_tap(Arc::clone(&state)).map_err(|error| {
+                ensure_normal_paste_protection(&app.handle().clone(), Arc::clone(&state)).map_err(|error| {
                     eprintln!("BeforePaste failed to start paste event tap: {error}");
                     error
                 })?;
