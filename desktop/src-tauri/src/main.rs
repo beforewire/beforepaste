@@ -7,9 +7,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use std::{path::PathBuf, process::Command};
+#[cfg(target_os = "macos")]
+use std::time::Instant;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, fs::OpenOptions, io::Write};
+use std::{path::PathBuf, process::Command};
 
 use beforepaste::config::{self, Config};
 use beforepaste::lang::Lang;
