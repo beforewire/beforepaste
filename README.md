@@ -37,7 +37,7 @@ Platform scope today:
 | Platform | Desktop tray | Normal paste protection | Safe paste shortcut | CLI |
 |---|---:|---:|---:|---:|
 | macOS | Yes | `Cmd+V` in AI targets | `Cmd+Ctrl+V` | Yes |
-| Windows | Early | Not yet | Yes | Yes |
+| Windows | Source/dev only | Not yet | CLI only | Yes |
 | Linux | Source/dev only | Not yet | CLI only | Yes |
 
 ## Install
@@ -52,15 +52,16 @@ Stable latest-download links for the website and docs:
 | Platform | Recommended download |
 |---|---|
 | macOS | [`beforepaste-desktop-macos.dmg`](https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-desktop-macos.dmg) |
-| Windows | [`beforepaste-desktop-windows-x86_64-setup.exe`](https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-desktop-windows-x86_64-setup.exe) |
+| Windows | [`beforepaste-windows-x86_64.exe`](https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-windows-x86_64.exe) |
 | Linux | [`beforepaste-linux-x86_64`](https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-linux-x86_64) |
 
 Other installers, ARM builds, and checksums are available from the
 [full releases page](https://github.com/beforewire/beforepaste/releases).
 
-Linux desktop artifacts are paused for the public release until the upstream
-Tauri Linux GTK dependency chain moves past the current `glib` advisory. The
-Linux CLI remains available.
+Windows and Linux desktop artifacts are paused for the public release. Windows
+desktop packaging is still being stabilized, and Linux desktop packaging is
+paused until the upstream Tauri Linux GTK dependency chain moves past the
+current `glib` advisory. Windows and Linux CLI binaries remain available.
 
 Early macOS builds may be unsigned. If you build locally, the desktop binary is
 written to:
@@ -84,10 +85,9 @@ npm ci
 npm run build:no-bundle
 ```
 
-Windows desktop builds are early. Linux CLI workflows are available; Linux
-desktop artifacts are paused until the upstream Tauri Linux GTK dependency
-chain moves past the current `glib` advisory. Target-aware normal paste
-protection is currently macOS-first.
+Windows and Linux desktop artifacts are paused for the public release. CLI
+workflows remain available there; target-aware normal paste protection is
+currently macOS-first.
 
 ### VS Code Extension
 

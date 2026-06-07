@@ -40,18 +40,17 @@ development packages on the build host. Windows packaging should run on a
 Windows runner so Tauri can build NSIS and MSI installers with the native
 toolchain.
 
-Release CI produces desktop artifacts for macOS and Windows x86_64/aarch64.
-Linux desktop packaging is paused for the public release until the upstream
-Tauri Linux GTK dependency chain moves past the current `glib` advisory. The
-root CLI release still includes Linux binaries.
+Release CI produces macOS desktop artifacts. Windows and Linux desktop
+packaging are paused for the public release; the root CLI release still
+includes Windows and Linux binaries.
 
 Feature scope by platform:
 
 - macOS: tray, preferences, safe paste shortcut, target-aware Cmd+V protection,
   browser/app/terminal detection.
-- Windows: tray, preferences, safe paste shortcut, CLI, and generated
-  installers. Target-aware normal paste interception remains platform-specific
-  work and is currently implemented only on macOS.
+- Windows: CLI is published. Desktop source builds remain available for
+  development, but public Windows desktop artifacts are paused while packaging
+  is stabilized.
 - Linux: CLI is published. Desktop source builds remain available for
   development, but public Linux desktop artifacts are paused pending the
   upstream Tauri GTK dependency update.
