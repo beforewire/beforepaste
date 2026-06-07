@@ -368,6 +368,46 @@ mod tests {
     }
 
     #[test]
+    #[serial]
+    fn active_for_tty_reads_exact_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = ConfigHomeGuard::set(dir.path());
+        enter(
+            "/dev/ttys003",
+            "gemini",
+            Path::new("/tmp/beforepaste-rs"),
+            TerminalIdentity::default(),
+            60,
+        )
+        .unwrap();
+
+        let target = active_for_tty("/dev/ttys003").unwrap().unwrap();
+        assert_eq!(target.kind, "gemini");
+        assert_eq!(target.tty, "/dev/ttys003");
+    }
+
+    #[test]
+    #[serial]
+    fn active_for_terminal_title_matches_unique_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = ConfigHomeGuard::set(dir.path());
+        enter(
+            "/dev/ttys004",
+            "codex",
+            Path::new("/tmp/beforepaste-rs"),
+            TerminalIdentity::default(),
+            60,
+        )
+        .unwrap();
+
+        let target = active_for_terminal_title("beforepaste-rs")
+            .unwrap()
+            .unwrap();
+        assert_eq!(target.kind, "codex");
+        assert_eq!(target.tty, "/dev/ttys004");
+    }
+
+    #[test]
     fn classify_known_ai_commands() {
         assert_eq!(
             classify_command("codex resume abc"),
