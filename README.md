@@ -42,20 +42,18 @@ Platform scope today:
 
 ## Install
 
-### Desktop App
+### macOS Desktop App
 
-The recommended user path is the desktop app from
+The recommended macOS user path is the desktop app from
 [GitHub Releases](https://github.com/beforewire/beforepaste/releases).
 
-Stable latest-download links for the website and docs:
+Stable latest-download link for the website and docs:
 
 | Platform | Recommended download |
 |---|---|
 | macOS | [`beforepaste-desktop-macos.dmg`](https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-desktop-macos.dmg) |
-| Windows | [`beforepaste-windows-x86_64.exe`](https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-windows-x86_64.exe) |
-| Linux | [`beforepaste-linux-x86_64`](https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-linux-x86_64) |
 
-Other installers, ARM builds, and checksums are available from the
+Other assets, ARM builds, and checksums are available from the
 [full releases page](https://github.com/beforewire/beforepaste/releases).
 
 Windows and Linux desktop artifacts are paused for the public release. Windows
@@ -63,12 +61,28 @@ desktop packaging is still being stabilized, and Linux desktop packaging is
 paused until the upstream Tauri Linux GTK dependency chain moves past the
 current `glib` advisory. Windows and Linux CLI binaries remain available.
 
-Early macOS builds may be unsigned. If you build locally, the desktop binary is
-written to:
+Early macOS builds may be unsigned. If macOS blocks the downloaded app, open
+System Settings -> Privacy & Security and choose `Open Anyway`, or right-click
+the app and choose `Open`.
+
+If you build locally, the desktop binary is written to:
 
 ```text
 desktop/src-tauri/target/release/beforepaste-desktop
 ```
+
+### CLI Downloads
+
+The CLI is available for scripting, CI, and advanced terminal workflows:
+
+| Platform | x86_64 download |
+|---|---|
+| macOS | [`beforepaste-macos-x86_64`](https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-macos-x86_64) |
+| Windows | [`beforepaste-windows-x86_64.exe`](https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-windows-x86_64.exe) |
+| Linux | [`beforepaste-linux-x86_64`](https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-linux-x86_64) |
+
+ARM builds are available on the full releases page. The `releases/latest`
+links become active after the first public release is published.
 
 ### Build From Source
 

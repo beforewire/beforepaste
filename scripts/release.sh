@@ -64,11 +64,11 @@ if git rev-parse --verify "v$new" >/dev/null 2>&1; then
 fi
 
 # Bump Cargo.toml version (the FIRST `version = ` line - the package one).
-sed -i -E '0,/^version = "/{ s/^version = "[^"]+"/version = "'"$new"'"/ }' Cargo.toml
+perl -0pi -e 's/^version = "[^"]+"/version = "'"$new"'"/m' Cargo.toml
 
 # Keep the Tauri desktop package version aligned with the CLI release tag.
 if [[ -f desktop/src-tauri/Cargo.toml ]]; then
-  sed -i -E '0,/^version = "/{ s/^version = "[^"]+"/version = "'"$new"'"/ }' desktop/src-tauri/Cargo.toml
+  perl -0pi -e 's/^version = "[^"]+"/version = "'"$new"'"/m' desktop/src-tauri/Cargo.toml
 fi
 
 if [[ -f desktop/src-tauri/tauri.conf.json ]]; then
@@ -101,7 +101,7 @@ echo
 read -r -p "Commit and tag v$new? [y/N]: " do_commit
 if [[ "${do_commit:-}" != "y" && "${do_commit:-}" != "Y" ]]; then
   echo "aborted before commit. Version files are modified;"
-  echo "run 'git checkout -- Cargo.toml Cargo.lock desktop/package.json desktop/package-lock.json desktop/src-tauri/Cargo.toml desktop/src-tauri/Cargo.lock desktop/src-tauri/tauri.conf.json' to undo."
+  echo "run 'git restore Cargo.toml Cargo.lock desktop/package.json desktop/package-lock.json desktop/src-tauri/Cargo.toml desktop/src-tauri/Cargo.lock desktop/src-tauri/tauri.conf.json' to undo."
   exit 0
 fi
 

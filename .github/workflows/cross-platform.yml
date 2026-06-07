@@ -25,6 +25,7 @@ env:
 jobs:
   cross_platform:
     name: Cross-Platform Build & Functional Tests (${{ matrix.os }})
+    timeout-minutes: 25
     # On pull_request_review, only an `approved` review opens the gate.
     # `commented` / `changes_requested` / `dismissed` are no-ops.
     if: |
@@ -54,12 +55,7 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
             libxkbcommon-dev \
-            libdbus-1-dev \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf
+            libdbus-1-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -71,6 +67,7 @@ jobs:
         uses: taiki-e/install-action@just
 
       - name: Setup Node
+        if: runner.os == 'macOS'
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -86,9 +83,11 @@ jobs:
         run: just test-fs
 
       - name: Install desktop dependencies
+        if: runner.os == 'macOS'
         working-directory: desktop
         run: npm ci
 
       - name: Desktop build (no bundle)
+        if: runner.os == 'macOS'
         working-directory: desktop
         run: npm run build:no-bundle

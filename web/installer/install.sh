@@ -59,7 +59,7 @@ main() {
     asset_name="beforepaste-${target}"
     url="https://github.com/${REPO}/releases/latest/download/${asset_name}"
 
-    printf "${CYAN}${BOLD}  BeforePaste Installer${NC}\n\n"
+    printf "${CYAN}${BOLD}  BeforePaste CLI Installer${NC}\n\n"
     printf "  ${YELLOW}[~]${NC} Downloading ${asset_name}...\n"
 
     tmp=$(mktemp)
@@ -112,7 +112,7 @@ main() {
         printf "  ${YELLOW}[!]${NC} Init had warnings. Run '${bin_path} menu' to fix.\n"
     fi
 
-    printf "\n  ${BOLD}BeforePaste is ready.${NC}\n"
+    printf "\n  ${BOLD}BeforePaste CLI is ready.${NC}\n"
     printf "  Copy text with Ctrl+C, then press your hotkey to redact it.\n"
     printf "  ${CYAN}beforepaste menu${NC}    - settings, hotkey, notifications\n"
     printf "  ${CYAN}beforepaste status${NC}  - show current state\n\n"

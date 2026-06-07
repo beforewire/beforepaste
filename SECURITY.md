@@ -13,10 +13,11 @@ older versions do not receive backports.
 
 **Do not open a public issue for security problems.**
 
-Report the issue privately, either:
+Report the issue privately by email to <security@beforepaste.com>.
 
-- Through GitHub's private vulnerability reporting: go to the repository's **Security** tab and click **Report a vulnerability** (once Private Vulnerability Reporting is enabled on this repo), or
-- By email to <security@beforepaste.com>
+If GitHub private vulnerability reporting is available on this repository, you
+may also use the repository's **Security** tab and choose **Report a
+vulnerability**.
 
 Please include:
 

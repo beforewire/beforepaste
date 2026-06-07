@@ -9,7 +9,7 @@ $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'aarch64' } else { 'x86_6
 $asset = "beforepaste-windows-$arch.exe"
 $url = "https://github.com/$Repo/releases/latest/download/$asset"
 
-Write-Host "  BeforePaste Installer" -ForegroundColor Cyan
+Write-Host "  BeforePaste CLI Installer" -ForegroundColor Cyan
 Write-Host "  Downloading $asset ..." -ForegroundColor Yellow
 
 $dir = Join-Path $env:LOCALAPPDATA 'Programs\beforepaste'
@@ -71,7 +71,7 @@ Write-Host "  Installed to $bin" -ForegroundColor Green
 try { & $bin init } catch { Write-Host "  Init had warnings. Run 'beforepaste menu' to fix." -ForegroundColor Yellow }
 
 Write-Host ""
-Write-Host "  BeforePaste is ready."
+Write-Host "  BeforePaste CLI is ready."
 Write-Host "  Copy text with Ctrl+C, then press your hotkey to redact it."
 Write-Host "  beforepaste menu    - settings, hotkey, notifications"
 Write-Host "  beforepaste status  - show current state"
