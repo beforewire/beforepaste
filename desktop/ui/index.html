@@ -172,31 +172,18 @@
         </section>
 
         <section class="bp-panel" data-panel-content="updates">
+          <input id="check-updates" type="checkbox" hidden />
+          <input id="auto-install" type="checkbox" hidden />
           <div class="bp-settings-group">
-            <label class="bp-setting-row">
+            <div class="bp-setting-row bp-setting-row-stack">
               <span>
-                <strong>Check for updates</strong>
-                <small>Look for new BeforePaste releases.</small>
+                <strong>Desktop updates</strong>
+                <small>In-app desktop updates are not enabled in this public source release. Download new builds from GitHub Releases.</small>
               </span>
-              <span class="bp-switch">
-                <input id="check-updates" type="checkbox" />
-                <span></span>
-              </span>
-            </label>
-            <label class="bp-setting-row">
-              <span>
-                <strong>Install automatically</strong>
-                <small>Apply updates after they pass signature checks.</small>
-              </span>
-              <span class="bp-switch">
-                <input id="auto-install" type="checkbox" />
-                <span></span>
-              </span>
-            </label>
-          </div>
-
-          <div class="bp-button-row">
-            <button id="check-update" class="bp-button" type="button">Check for updates</button>
+              <div class="bp-button-row">
+                <button id="check-update" class="bp-button" type="button">GitHub Releases</button>
+              </div>
+            </div>
           </div>
         </section>
 

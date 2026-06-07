@@ -58,7 +58,7 @@ const copy = {
     statusSaved: "Changes saved",
     statusRefreshed: "Status refreshed",
     usingAutoDetection: "Using auto detection",
-    noUpdate: "No update available",
+    noUpdate: "Open GitHub Releases to download the latest build.",
     updateAvailable: "Update available",
     installExtension: "Install extension",
     installed: "Installed",
@@ -111,7 +111,7 @@ const copy = {
     statusSaved: "设置已保存",
     statusRefreshed: "状态已刷新",
     usingAutoDetection: "已切回自动识别",
-    noUpdate: "当前已是最新版本",
+    noUpdate: "请前往 GitHub Releases 下载最新版本。",
     updateAvailable: "发现新版本",
     installExtension: "安装插件",
     installed: "已安装",
@@ -226,8 +226,7 @@ function applyStaticCopy() {
     currentLang === "ZH" ? "深度扫描" : "Deep scan",
     currentLang === "ZH" ? "熵扫描" : "Entropy scan",
     currentLang === "ZH" ? "保护白名单" : "Protection whitelist",
-    currentLang === "ZH" ? "检查更新" : "Check for updates",
-    currentLang === "ZH" ? "自动安装" : "Install automatically",
+    currentLang === "ZH" ? "桌面端更新" : "Desktop updates",
     currentLang === "ZH" ? "正在检查" : "Checking protection",
     currentLang === "ZH" ? "权限状态" : "Permission checks",
     currentLang === "ZH" ? "辅助功能" : "Accessibility",
@@ -251,8 +250,7 @@ function applyStaticCopy() {
     currentLang === "ZH" ? "扫描 JSON、配置片段等结构化内容中的隐藏 secret。" : "Scan structured payloads and embedded secret shapes.",
     currentLang === "ZH" ? "识别随机度很高的未知 token，可能带来更多误判。" : "Detect unknown high-entropy tokens. This can increase false positives.",
     currentLang === "ZH" ? "BeforePaste 只会自动保护勾选的应用、网页和终端场景。" : "BeforePaste only protects the checked apps, websites, and terminal contexts.",
-    currentLang === "ZH" ? "发现新的 BeforePaste 版本时提醒我。" : "Look for new BeforePaste releases.",
-    currentLang === "ZH" ? "更新通过校验后自动安装。" : "Apply updates after they pass signature checks.",
+    currentLang === "ZH" ? "当前公开源码版未启用桌面端内置更新，请从 GitHub Releases 下载新版。" : "In-app desktop updates are not enabled in this public source release. Download new builds from GitHub Releases.",
     currentLang === "ZH" ? "检查粘贴模式、快捷键、目标识别和权限状态。" : "Checks the selected paste mode, shortcuts, target detection, and permissions.",
     currentLang === "ZH" ? "修改 macOS 权限后，可能需要重启 BeforePaste 才能准确刷新。" : "Permission changes may require restarting BeforePaste before macOS reports them accurately.",
     currentLang === "ZH" ? "用于执行最后一步粘贴。修改授权后请重启 BeforePaste 再确认。" : "Needed to perform paste actions. Restart BeforePaste after changing this permission.",
@@ -266,7 +264,7 @@ function applyStaticCopy() {
 
   document.querySelector(".bp-status-pill.is-on").textContent = tr("recommended");
   document.querySelector("#clear-target").textContent = tr("autoDetection");
-  document.querySelector("#check-update").textContent = currentLang === "ZH" ? "检查更新" : "Check for updates";
+  document.querySelector("#check-update").textContent = currentLang === "ZH" ? "GitHub Releases" : "GitHub Releases";
   const styleOptions = fields.redactStyle?.querySelectorAll("option") || [];
   const styleLabels = currentLang === "ZH"
     ? ["固定标记", "类型标签", "示例占位", "直接删除"]
@@ -301,8 +299,8 @@ function renderConfig(config, platform = currentPlatform) {
   fields.deepScan.checked = config.enable_deep_scan;
   fields.entropyScan.checked = config.enable_entropy;
   fields.sensitivity.value = String(config.sensitivity);
-  fields.checkUpdates.checked = config.check_for_updates;
-  fields.autoInstall.checked = config.auto_install;
+  fields.checkUpdates.checked = Boolean(config.check_for_updates);
+  fields.autoInstall.checked = Boolean(config.auto_install);
   fields.redactStyle.value = config.redact_style;
   fields.redactPattern.value = config.redact_pattern;
   renderTargets();
@@ -565,8 +563,11 @@ async function refreshVscodeBridge() {
       status.installed ? tr("installed") : tr("notInstalled"),
       status.installed ? "ok" : "warn",
     );
-    fields.installVscodeBridge.hidden = Boolean(status.installed);
-    fields.installVscodeBridge.title = status.install_command || "";
+    const canInstall = Boolean(status.vsix_path) && !status.installed;
+    fields.installVscodeBridge.hidden = !canInstall;
+    fields.installVscodeBridge.title = canInstall
+      ? (status.install_command || "")
+      : (status.message || "");
   } catch (error) {
     setDiagnosticStatus(fields.vscodeBridgeStatus, String(error), "warn");
   }
@@ -585,8 +586,8 @@ function collectConfig() {
     enable_deep_scan: fields.deepScan.checked,
     enable_entropy: fields.entropyScan.checked,
     sensitivity: Number(fields.sensitivity.value),
-    check_for_updates: fields.checkUpdates.checked,
-    auto_install: fields.autoInstall.checked,
+    check_for_updates: Boolean(currentConfig.check_for_updates),
+    auto_install: Boolean(currentConfig.auto_install),
     lang: fields.language.value,
     redact_style: fields.redactStyle.value,
     redact_pattern: fields.redactPattern.value || "[REDACTED]",
@@ -768,8 +769,6 @@ for (const field of [
   fields.deepScan,
   fields.entropyScan,
   fields.sensitivity,
-  fields.checkUpdates,
-  fields.autoInstall,
   fields.redactStyle,
 ]) {
   field.addEventListener("change", queueSave);
@@ -807,13 +806,8 @@ document.querySelector("#clear-target").addEventListener("click", async () => {
   setStatus(tr("usingAutoDetection"));
 });
 
-document.querySelector("#check-update").addEventListener("click", async () => {
-  const result = await invoke("check_for_update");
-  if (result.available) {
-    setStatus(`${tr("updateAvailable")}: ${result.version}`);
-  } else {
-    setStatus(tr("noUpdate"));
-  }
+document.querySelector("#check-update").addEventListener("click", () => {
+  setStatus(tr("noUpdate"));
 });
 
 fields.doctorRefresh.addEventListener("click", async () => {
