@@ -1,6 +1,6 @@
 //! AI-target detection for the `watch` auto-redact loop.
 //!
-//! Additive fork module (Contextpipe/BeforePaste). Does NOT touch upstream core.
+//! BeforePaste AI-target detection module.
 //! macOS: frontmost app bundle id (osascript) + browser active-tab URL (osascript).
 //! Fail-safe: a browser whose tab URL can't be read is NOT a target (positive match only).
 //! Terminal AI-CLI detection + Windows are later increments.
@@ -265,7 +265,7 @@ mod tests {
     fn detects_shell_hook_title_marker() {
         assert_eq!(terminal_ai_cli("beforepaste:codex:aiinfra"), Some("codex"));
         assert_eq!(
-            terminal_ai_cli("beforepaste:gemini:beforepaste-rs"),
+            terminal_ai_cli("beforepaste:gemini:beforepaste"),
             Some("gemini")
         );
         assert_eq!(terminal_ai_cli("beforepaste:unknown:aiinfra"), None);

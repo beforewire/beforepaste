@@ -375,7 +375,7 @@ mod tests {
         enter(
             "/dev/ttys003",
             "gemini",
-            Path::new("/tmp/beforepaste-rs"),
+            Path::new("/tmp/beforepaste"),
             TerminalIdentity::default(),
             60,
         )
@@ -394,15 +394,13 @@ mod tests {
         enter(
             "/dev/ttys004",
             "codex",
-            Path::new("/tmp/beforepaste-rs"),
+            Path::new("/tmp/beforepaste"),
             TerminalIdentity::default(),
             60,
         )
         .unwrap();
 
-        let target = active_for_terminal_title("beforepaste-rs")
-            .unwrap()
-            .unwrap();
+        let target = active_for_terminal_title("beforepaste").unwrap().unwrap();
         assert_eq!(target.kind, "codex");
         assert_eq!(target.tty, "/dev/ttys004");
     }
@@ -441,14 +439,14 @@ mod tests {
 
     #[test]
     fn title_matching_accepts_plain_project_or_codex_spinner() {
-        let cwd = "/Users/example/code/beforepaste-rs";
-        assert!(title_matches_cwd("beforepaste-rs", cwd));
-        assert!(title_matches_cwd("⠙ beforepaste-rs", cwd));
+        let cwd = "/Users/example/code/beforepaste";
+        assert!(title_matches_cwd("beforepaste", cwd));
+        assert!(title_matches_cwd("⠙ beforepaste", cwd));
     }
 
     #[test]
     fn title_matching_rejects_editor_and_unrelated_titles() {
-        let cwd = "/Users/example/code/beforepaste-rs";
+        let cwd = "/Users/example/code/beforepaste-app";
         assert!(!title_matches_cwd("vim .env", cwd));
         assert!(!title_matches_cwd("working notes", cwd));
         assert!(!title_matches_cwd("beforepaste", cwd));
@@ -462,7 +460,7 @@ mod tests {
         enter(
             "/dev/ttys007",
             "codex",
-            Path::new("/tmp/beforepaste-rs"),
+            Path::new("/tmp/beforepaste"),
             TerminalIdentity {
                 terminal_app: Some("ghostty".to_string()),
                 terminal_id: Some("terminal-1".to_string()),
@@ -491,7 +489,7 @@ mod tests {
             enter(
                 tty,
                 "codex",
-                Path::new("/tmp/beforepaste-rs"),
+                Path::new("/tmp/beforepaste"),
                 TerminalIdentity {
                     terminal_app: Some("vscode".to_string()),
                     terminal_id: Some(terminal_id.to_string()),

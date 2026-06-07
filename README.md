@@ -47,6 +47,17 @@ Platform scope today:
 The recommended user path is the desktop app from
 [GitHub Releases](https://github.com/beforewire/beforepaste/releases).
 
+Stable latest-download links for the website and docs:
+
+| Platform | Recommended download |
+|---|---|
+| macOS | [`beforepaste-desktop-macos.dmg`](https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-desktop-macos.dmg) |
+| Windows | [`beforepaste-desktop-windows-x86_64-setup.exe`](https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-desktop-windows-x86_64-setup.exe) |
+| Linux | [`beforepaste-desktop-linux-x86_64.AppImage`](https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-desktop-linux-x86_64.AppImage) |
+
+Other installers, CLI binaries, ARM builds, and checksums are available from the
+[full releases page](https://github.com/beforewire/beforepaste/releases).
+
 Early macOS builds may be unsigned. If you build locally, the desktop binary is
 written to:
 
@@ -68,6 +79,10 @@ cd desktop
 npm ci
 npm run build:no-bundle
 ```
+
+Windows and Linux desktop builds are early. Safe paste shortcut and CLI
+workflows are available there; target-aware normal paste protection is currently
+macOS-first.
 
 ### VS Code Extension
 

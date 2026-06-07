@@ -1,4 +1,4 @@
-//! `watch` — background auto-redact loop (Contextpipe/BeforePaste fork addition).
+//! `watch` — background auto-redact loop for AI targets..
 //!
 //! While an AI app/site is frontmost (see `target`), the clipboard never holds
 //! raw secrets: on a clipboard change we scrub via the upstream engine
