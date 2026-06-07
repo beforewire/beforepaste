@@ -6,6 +6,7 @@
 //! Terminal AI-CLI detection + Windows are later increments.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum Detection {
     Ai(String),
     Terminal,

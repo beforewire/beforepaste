@@ -84,14 +84,17 @@ pub fn read(tty: &str) -> anyhow::Result<Option<TerminalTarget>> {
     read_path(&state_path(&tty))
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub fn active_for_terminal_title(title: &str) -> anyhow::Result<Option<TerminalTarget>> {
     active_for_identity(|target| title_matches_cwd(title, &target.cwd))
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub fn active_for_tty(tty: &str) -> anyhow::Result<Option<TerminalTarget>> {
     read(tty)
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub fn active_for_terminal_id(
     terminal_app: &str,
     terminal_id: &str,
@@ -107,6 +110,7 @@ pub fn active_for_terminal_id(
     })
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub fn active_for_terminal_app(terminal_app: &str) -> anyhow::Result<Option<TerminalTarget>> {
     let terminal_app = terminal_app.trim();
     if terminal_app.is_empty() {
@@ -115,6 +119,7 @@ pub fn active_for_terminal_app(terminal_app: &str) -> anyhow::Result<Option<Term
     active_for_identity(|target| target.terminal_app.as_deref() == Some(terminal_app))
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn active_for_identity(
     mut predicate: impl FnMut(&TerminalTarget) -> bool,
 ) -> anyhow::Result<Option<TerminalTarget>> {
@@ -273,6 +278,7 @@ fn read_path(path: &Path) -> anyhow::Result<Option<TerminalTarget>> {
     Ok(Some(target))
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn title_matches_cwd(title: &str, cwd: &str) -> bool {
     let Some(project) = Path::new(cwd).file_name().and_then(|name| name.to_str()) else {
         return false;
@@ -292,6 +298,7 @@ fn title_matches_cwd(title: &str, cwd: &str) -> bool {
     words.next().is_none() && is_braille_spinner(first) && last.eq_ignore_ascii_case(project)
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn is_braille_spinner(s: &str) -> bool {
     s.chars()
         .next()
