@@ -652,6 +652,7 @@ pub fn consume_system_paste_bypass() -> bool {
         .is_ok()
 }
 
+#[cfg(target_os = "macos")]
 fn arm_system_paste_bypass(duration: Duration) {
     let until = now_millis().saturating_add(duration.as_millis() as u64);
     SYSTEM_PASTE_BYPASS_UNTIL_MS.store(until, Ordering::SeqCst);
