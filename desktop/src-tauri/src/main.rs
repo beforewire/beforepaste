@@ -1303,11 +1303,6 @@ fn start_paste_event_tap(state: Arc<AppState>) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
-fn start_paste_event_tap(_state: Arc<AppState>) -> anyhow::Result<()> {
-    Ok(())
-}
-
 fn ensure_normal_paste_protection(
     app: &tauri::AppHandle,
     state: Arc<AppState>,
@@ -1345,6 +1340,7 @@ fn disable_normal_paste_protection(app: &tauri::AppHandle, state: &Arc<AppState>
     }
 }
 
+#[cfg(target_os = "macos")]
 fn ensure_normal_paste_event_tap(state: Arc<AppState>) -> anyhow::Result<()> {
     if state
         .normal_paste_event_tap_started
