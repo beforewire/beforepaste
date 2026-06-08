@@ -44,10 +44,12 @@ struct TargetSnapshot {
 #[derive(Debug, Clone, Deserialize)]
 struct TerminalTarget {
     kind: String,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     cwd: String,
     #[serde(default)]
     terminal_app: Option<String>,
     #[serde(default)]
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     terminal_id: Option<String>,
     expires_at: u64,
 }
