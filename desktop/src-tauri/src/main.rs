@@ -183,8 +183,14 @@ fn open_privacy_settings(kind: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let url = match kind.as_str() {
-            "accessibility" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-            "input_monitoring" => "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent",
+            "accessibility" => {
+                let _ = request_accessibility_trust();
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            }
+            "input_monitoring" => {
+                let _ = request_input_monitoring_trust();
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+            }
             "automation" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
             _ => "x-apple.systempreferences:com.apple.preference.security?Privacy",
         };
@@ -863,6 +869,21 @@ fn request_accessibility_trust() -> bool {
 
 #[cfg(not(target_os = "macos"))]
 fn request_accessibility_trust() -> bool {
+    true
+}
+
+#[cfg(target_os = "macos")]
+fn request_input_monitoring_trust() -> bool {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGRequestListenEventAccess() -> bool;
+    }
+
+    unsafe { CGRequestListenEventAccess() }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn request_input_monitoring_trust() -> bool {
     true
 }
 

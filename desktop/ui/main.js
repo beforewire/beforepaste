@@ -43,6 +43,7 @@ let saveTimer;
 let targetCatalog = [];
 let cliTargetCatalog = [];
 let currentLang = "EN";
+const pendingPrivacyChecks = new Set();
 const lastPanelKey = "beforepaste:last-panel";
 
 const copy = {
@@ -68,6 +69,7 @@ const copy = {
     installDone: "Extension installed",
     granted: "✅ Granted",
     missing: "❌ Not granted",
+    restartPending: "Restart to confirm",
     restartAfterPrivacy: "Restart BeforePaste after changing macOS permissions.",
     recommended: "Recommended",
     web: "Web",
@@ -121,6 +123,7 @@ const copy = {
     installDone: "插件已安装",
     granted: "✅ 已授权",
     missing: "❌ 未授权",
+    restartPending: "重启后确认",
     restartAfterPrivacy: "修改 macOS 权限后，请重启 BeforePaste 再确认。",
     recommended: "推荐",
     web: "网页",
@@ -430,21 +433,28 @@ function formatTargetReason(reason) {
   return titleCase(detail || kind || reason);
 }
 
-function permissionLabel(value) {
-  return value ? [tr("granted"), "ok"] : [tr("missing"), "warn"];
+function permissionLabel(value, key) {
+  if (value) {
+    if (key) pendingPrivacyChecks.delete(key);
+    return [tr("granted"), "ok"];
+  }
+  if (key && pendingPrivacyChecks.has(key)) {
+    return [tr("restartPending"), "warn"];
+  }
+  return [tr("missing"), "warn"];
 }
 
-function renderPermission(element, value) {
-  const [label, state] = permissionLabel(value);
+function renderPermission(element, value, key) {
+  const [label, state] = permissionLabel(value, key);
   setDiagnosticStatus(element, label, state);
 }
 
 function renderDoctor(status) {
   currentPlatform = status.platform || currentPlatform;
   applyPlatformCopy(currentPlatform);
-  renderPermission(fields.doctorAccessibility, status.permissions.accessibility);
-  renderPermission(fields.doctorInputMonitoring, status.permissions.input_monitoring);
-  renderPermission(fields.doctorAutomation, status.permissions.automation);
+  renderPermission(fields.doctorAccessibility, status.permissions.accessibility, "accessibility");
+  renderPermission(fields.doctorInputMonitoring, status.permissions.input_monitoring, "input_monitoring");
+  renderPermission(fields.doctorAutomation, status.permissions.automation, "automation");
 
   setDiagnosticStatus(
     fields.doctorCurrentTarget,
@@ -504,11 +514,18 @@ function renderDoctor(status) {
     const missing = [];
     if (!status.permissions.accessibility) missing.push(currentLang === "ZH" ? "辅助功能" : "Accessibility");
     if (!status.permissions.input_monitoring) missing.push(currentLang === "ZH" ? "输入监控" : "Input Monitoring");
-    summaryCopy = missing.length
-      ? currentLang === "ZH"
+    const pending = ["accessibility", "input_monitoring"].some((key) => pendingPrivacyChecks.has(key));
+    if (pending) {
+      summaryCopy = currentLang === "ZH"
+        ? "已打开 macOS 授权页。完成授权后，请退出并重新打开 BeforePaste 再确认。"
+        : "macOS Privacy settings were opened. After granting access, quit and reopen BeforePaste to confirm.";
+    } else if (missing.length) {
+      summaryCopy = currentLang === "ZH"
         ? `请在 macOS 隐私设置中开启${missing.join("和")}，然后重新打开 BeforePaste。`
-        : `Grant ${missing.join(" and ")} in macOS Privacy settings, then reopen BeforePaste.`
-      : tr("restartCopy");
+        : `Grant ${missing.join(" and ")} in macOS Privacy settings, then reopen BeforePaste.`;
+    } else {
+      summaryCopy = tr("restartCopy");
+    }
     summaryState = "warn";
   } else if (currentPlatform !== "macos") {
     summaryTitle = tr("safeShortcutReady");
@@ -827,10 +844,14 @@ fields.installVscodeBridge.addEventListener("click", async () => {
 
 for (const button of document.querySelectorAll("[data-open-privacy]")) {
   button.addEventListener("click", async () => {
+    const privacyKind = button.dataset.openPrivacy;
     try {
-      await invoke("open_privacy_settings", { kind: button.dataset.openPrivacy });
+      pendingPrivacyChecks.add(privacyKind);
+      await invoke("open_privacy_settings", { kind: privacyKind });
+      await refreshDoctor();
       setStatus(tr("restartAfterPrivacy"));
     } catch (error) {
+      pendingPrivacyChecks.delete(privacyKind);
       setStatus(String(error));
     }
   });

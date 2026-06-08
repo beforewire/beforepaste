@@ -61,9 +61,19 @@ desktop packaging is still being stabilized, and Linux desktop packaging is
 paused until the upstream Tauri Linux GTK dependency chain moves past the
 current `glib` advisory. Windows and Linux CLI binaries remain available.
 
-Early macOS builds may be unsigned. If macOS blocks the downloaded app, open
-System Settings -> Privacy & Security and choose `Open Anyway`, or right-click
-the app and choose `Open`.
+Early macOS preview builds may be unsigned and not notarized. If macOS blocks
+the downloaded app, open System Settings -> Privacy & Security and choose
+`Open Anyway`, or right-click the app and choose `Open`. For invited testing,
+drag `BeforePaste.app` into `/Applications` first. If macOS says the app is
+damaged, clear the download quarantine flag and open it again:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/BeforePaste.app
+open /Applications/BeforePaste.app
+```
+
+After changing Accessibility or Input Monitoring permissions, quit and reopen
+BeforePaste before checking Doctor again.
 
 If you build locally, the desktop binary is written to:
 
