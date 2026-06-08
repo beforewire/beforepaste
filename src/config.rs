@@ -38,10 +38,9 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub beforepaste_enabled: bool,
     pub silent: bool,
-    /// Protect the normal paste shortcut (`Cmd+V` on macOS) by intercepting it
-    /// with a keyboard event tap and only rewriting when an AI target is active.
-    /// Implemented on macOS; Windows/Linux keep the explicit safe-paste shortcut
-    /// until their platform-specific keyboard hooks are available.
+    /// Protect the normal paste shortcut by intercepting it and only rewriting
+    /// when an AI target is active. macOS uses a keyboard event tap for
+    /// `Cmd+V`; Windows/Linux use the desktop tray's global `Ctrl+V` shortcut.
     #[serde(default = "default_protect_normal_paste")]
     pub protect_normal_paste: bool,
     #[serde(default = "default_force_paste_hotkey")]
@@ -195,7 +194,7 @@ fn default_true() -> bool {
 }
 
 fn default_protect_normal_paste() -> bool {
-    cfg!(target_os = "macos")
+    true
 }
 
 fn default_redact_style() -> RedactStyle {

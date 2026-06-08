@@ -48,9 +48,15 @@ Feature scope by platform:
 
 - macOS: tray, preferences, safe paste shortcut, target-aware Cmd+V protection,
   browser/app/terminal detection.
-- Windows: CLI is published. Desktop source builds remain available for
-  development, but public Windows desktop artifacts are paused while packaging
-  is stabilized.
-- Linux: CLI is published. Desktop source builds remain available for
-  development, but public Linux desktop artifacts are paused pending the
-  upstream Tauri GTK dependency update.
+- Windows: tray and preferences build from source. Advanced mode registers a
+  global Ctrl+V shortcut; VS Code AI terminal targets are detected through the
+  BeforePaste VS Code extension, and unknown targets pass through as normal
+  paste.
+- Linux: tray and preferences build from source. Advanced mode registers a
+  global Ctrl+V shortcut; VS Code AI terminal targets are detected through the
+  BeforePaste VS Code extension. Pass-through paste requires one of `xdotool`,
+  `wtype`, or `ydotool` depending on the session.
+
+Public Windows and Linux desktop artifacts remain paused until packaging,
+code-signing, and Linux GTK dependency policy are finalized. The source-level
+tray implementation is available for development builds.

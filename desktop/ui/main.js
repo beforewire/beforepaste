@@ -287,13 +287,13 @@ function renderConfig(config, platform = currentPlatform) {
   applyStaticCopy();
   fields.beforepasteEnabled.checked = Boolean(config.beforepaste_enabled);
   applyPlatformCopy(currentPlatform);
-  const advancedMode = currentPlatform === "macos" && Boolean(config.protect_normal_paste);
+  const advancedMode = Boolean(config.protect_normal_paste);
   fields.modeAdvanced.checked = advancedMode;
-  fields.modeAdvanced.disabled = currentPlatform !== "macos";
+  fields.modeAdvanced.disabled = false;
   fields.modeSafeOnly.checked = !advancedMode;
   fields.protectNormalPaste.checked =
     advancedMode;
-  fields.protectNormalPaste.disabled = currentPlatform !== "macos";
+  fields.protectNormalPaste.disabled = false;
   fields.forcePasteHotkey.value = config.force_paste_hotkey;
   fields.launchAtLogin.checked = Boolean(config.launch_at_login);
   fields.deepScan.checked = config.enable_deep_scan;
@@ -389,11 +389,11 @@ function applyPlatformCopy(platform) {
       : `Needed for automatic ${label} protection. Restart BeforePaste after changing this permission.`;
   } else {
     fields.normalPasteCopy.textContent = currentLang === "ZH"
-      ? "当前平台暂不支持自动保护普通粘贴，请使用安全粘贴快捷键。"
-      : "Target-aware normal paste protection is not available on this platform yet. Use the safe paste shortcut.";
+      ? `在 VS Code AI 终端或手动指定目标中按 ${label} 时，先脱敏再粘贴；无法识别目标时正常粘贴。`
+      : `Redact before ${label} in VS Code AI terminals or manual targets; pass through when no AI target is known.`;
     fields.inputMonitoringCopy.textContent = currentLang === "ZH"
-      ? "此平台的安全粘贴快捷键不需要输入监控。"
-      : "Not required for the safe paste shortcut on this platform.";
+      ? "此平台通过全局快捷键接管 Ctrl+V，不使用 macOS 输入监控。"
+      : "This platform uses a global Ctrl+V shortcut instead of macOS Input Monitoring.";
   }
 }
 
@@ -460,14 +460,17 @@ function renderDoctor(status) {
   if (!status.beforepaste_enabled) {
     cmdVLabel = tr("disabled");
     cmdVState = "muted";
-  } else if (currentPlatform !== "macos") {
-    cmdVLabel = tr("notSupported");
-    cmdVState = "muted";
   } else if (!status.protect_normal_paste) {
     cmdVLabel = tr("off");
     cmdVState = "muted";
-  } else if (!status.permissions.accessibility || !status.permissions.input_monitoring) {
+  } else if (
+    currentPlatform === "macos"
+    && (!status.permissions.accessibility || !status.permissions.input_monitoring)
+  ) {
     cmdVLabel = tr("grantPermission");
+    cmdVState = "warn";
+  } else if (currentPlatform !== "macos" && !status.normal_paste_hotkey_registered) {
+    cmdVLabel = `${normalPasteLabel(currentPlatform)} ${tr("notRegistered")}`;
     cmdVState = "warn";
   } else if (!status.normal_paste_event_tap_installed) {
     cmdVLabel = status.normal_paste_event_tap_started ? tr("retrying") : tr("needsRestart");
@@ -510,11 +513,6 @@ function renderDoctor(status) {
         : `Grant ${missing.join(" and ")} in macOS Privacy settings, then reopen BeforePaste.`
       : tr("restartCopy");
     summaryState = "warn";
-  } else if (currentPlatform !== "macos") {
-    summaryTitle = tr("safeShortcutReady");
-    summaryCopy = currentLang === "ZH"
-      ? `使用 ${formatHotkeyForDisplay(status.force_paste_hotkey)} 粘贴脱敏后的内容。普通 ${normalPasteLabel(currentPlatform)} 暂不支持自动保护。`
-      : `Use ${formatHotkeyForDisplay(status.force_paste_hotkey)} for redacted paste. Normal ${normalPasteLabel(currentPlatform)} protection is not available yet.`;
   } else if (!status.protect_normal_paste) {
     summaryTitle = tr("safeShortcutReady");
     summaryCopy = currentLang === "ZH"

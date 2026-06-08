@@ -1,6 +1,5 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-#[cfg(target_os = "macos")]
 use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 use std::process::{Command, Stdio};
@@ -17,7 +16,6 @@ use crate::detector::Detector;
 use crate::notify;
 use crate::redact_cli;
 use crate::stats;
-#[cfg(target_os = "macos")]
 use crate::targets::{self, TargetSurface};
 
 const TARGET_CACHE_FILE: &str = "target-state.json";
@@ -43,14 +41,15 @@ struct TargetSnapshot {
     expires_at: u64,
 }
 
-#[cfg(target_os = "macos")]
 #[derive(Debug, Clone, Deserialize)]
 struct TerminalTarget {
     kind: String,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     cwd: String,
     #[serde(default)]
     terminal_app: Option<String>,
     #[serde(default)]
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     terminal_id: Option<String>,
     expires_at: u64,
 }
@@ -105,6 +104,10 @@ pub fn run() -> anyhow::Result<()> {
     let reason = current_target_reason();
     let engine = Engine::new();
     paste_with(reason, &engine.config, &engine.detector, RestoreMode::Sync)
+}
+
+pub fn emit_plain_system_paste() -> anyhow::Result<()> {
+    emit_system_paste()
 }
 
 fn paste_with(
@@ -282,6 +285,12 @@ fn detect_current_target() -> Option<String> {
 
 #[cfg(not(target_os = "macos"))]
 fn detect_current_target() -> Option<String> {
+    let config = Config::load();
+    if let Some(target) = active_terminal_by_app("vscode") {
+        if targets::enabled_on(&config, TargetSurface::Vscode, &target.kind) {
+            return Some(format!("cli:{}", target.kind));
+        }
+    }
     None
 }
 
@@ -547,7 +556,6 @@ fn active_terminal_by_id(terminal_app: &str, terminal_id: &str) -> Option<Termin
     })
 }
 
-#[cfg(target_os = "macos")]
 fn active_terminal_by_app(terminal_app: &str) -> Option<TerminalTarget> {
     active_terminal(|target| target.terminal_app.as_deref() == Some(terminal_app))
 }
@@ -562,7 +570,6 @@ fn read_terminal_target_by_tty(tty: &str) -> Option<TerminalTarget> {
     read_terminal_target_path(state_path(tty))
 }
 
-#[cfg(target_os = "macos")]
 fn active_terminal(mut predicate: impl FnMut(&TerminalTarget) -> bool) -> Option<TerminalTarget> {
     let entries = fs::read_dir(states_dir()).ok()?;
     let mut matches = Vec::new();
@@ -584,7 +591,6 @@ fn active_terminal(mut predicate: impl FnMut(&TerminalTarget) -> bool) -> Option
     }
 }
 
-#[cfg(target_os = "macos")]
 fn read_terminal_target_path(path: PathBuf) -> Option<TerminalTarget> {
     let target: TerminalTarget = serde_json::from_str(&fs::read_to_string(path).ok()?).ok()?;
     if target.expires_at <= now_secs() {
@@ -599,7 +605,6 @@ fn state_path(tty: &str) -> PathBuf {
     states_dir().join(format!("{}.json", state_key(tty)))
 }
 
-#[cfg(target_os = "macos")]
 fn states_dir() -> PathBuf {
     config::base_dir().join("terminal-targets")
 }
@@ -739,7 +744,31 @@ fn emit_system_paste() -> anyhow::Result<()> {
 
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 fn emit_system_paste() -> anyhow::Result<()> {
-    anyhow::bail!("protected-paste system paste is not implemented on this OS yet")
+    let mut attempts = Vec::new();
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        attempts.push(("wtype", vec!["-M", "ctrl", "v", "-m", "ctrl"]));
+        attempts.push(("ydotool", vec!["key", "29:1", "47:1", "47:0", "29:0"]));
+    }
+    if std::env::var_os("DISPLAY").is_some() {
+        attempts.push(("xdotool", vec!["key", "ctrl+v"]));
+    }
+    if attempts.is_empty() {
+        attempts.push(("xdotool", vec!["key", "ctrl+v"]));
+        attempts.push(("wtype", vec!["-M", "ctrl", "v", "-m", "ctrl"]));
+    }
+
+    let mut errors = Vec::new();
+    for (program, args) in attempts {
+        match std::process::Command::new(program).args(args).status() {
+            Ok(status) if status.success() => return Ok(()),
+            Ok(status) => errors.push(format!("{program} exited with {status}")),
+            Err(error) => errors.push(format!("{program}: {error}")),
+        }
+    }
+    anyhow::bail!(
+        "protected-paste system paste needs xdotool, wtype, or ydotool on Linux ({})",
+        errors.join("; ")
+    )
 }
 
 fn now_secs() -> u64 {
@@ -758,8 +787,61 @@ fn now_millis() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(target_os = "macos")]
     use super::*;
+    use serial_test::serial;
+    use std::path::Path;
+
+    struct ConfigHomeGuard {
+        saved: Option<std::ffi::OsString>,
+    }
+
+    impl ConfigHomeGuard {
+        fn set(path: &Path) -> Self {
+            let saved = std::env::var_os("BEFOREPASTE_CONFIG_HOME");
+            std::env::set_var("BEFOREPASTE_CONFIG_HOME", path);
+            Self { saved }
+        }
+    }
+
+    impl Drop for ConfigHomeGuard {
+        fn drop(&mut self) {
+            if let Some(saved) = self.saved.take() {
+                std::env::set_var("BEFOREPASTE_CONFIG_HOME", saved);
+            } else {
+                std::env::remove_var("BEFOREPASTE_CONFIG_HOME");
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn active_terminal_by_app_reads_vscode_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = ConfigHomeGuard::set(dir.path());
+        let state_dir = states_dir();
+        std::fs::create_dir_all(&state_dir).unwrap();
+        let now = now_secs();
+        std::fs::write(
+            state_dir.join("vscode-test.json"),
+            format!(
+                r#"{{
+  "tty": "vscode:test:1",
+  "cmd": "codex",
+  "kind": "codex",
+  "cwd": "/tmp/beforepaste",
+  "terminal_app": "vscode",
+  "terminal_id": "1",
+  "updated_at": {now},
+  "expires_at": {}
+}}"#,
+                now + 60
+            ),
+        )
+        .unwrap();
+
+        let target = active_terminal_by_app("vscode").unwrap();
+        assert_eq!(target.kind, "codex");
+    }
 
     #[cfg(target_os = "macos")]
     #[test]
