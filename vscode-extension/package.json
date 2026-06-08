@@ -4,6 +4,7 @@
   "description": "Publishes active VS Code terminal AI CLI state for BeforePaste desktop target detection.",
   "version": "0.1.0",
   "publisher": "beforewire",
+  "icon": "images/beforepaste-icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",

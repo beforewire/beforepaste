@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/assets/beforepaste-logo-horizontal-tagline.svg" alt="BeforePaste - Paste to AI without leaking secrets" width="560">
+</p>
+
 # BeforePaste
 
 Local-first paste protection for AI apps, AI websites, and AI terminal workflows.

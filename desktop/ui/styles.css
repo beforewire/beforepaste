@@ -8,7 +8,7 @@
 }
 
 .bp-app-icon {
-  background: linear-gradient(180deg, var(--bp-green), #164c45);
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .bp-nav-item[data-panel="redaction"] .bp-nav-icon {

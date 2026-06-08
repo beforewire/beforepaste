@@ -435,26 +435,7 @@ fn install_preferences_close_handler(app: &tauri::AppHandle) {
 }
 
 fn tray_icon() -> Image<'static> {
-    let size = 32;
-    let mut rgba = Vec::with_capacity(size * size * 4);
-    for y in 0..size {
-        for x in 0..size {
-            let in_body = (6..=25).contains(&x) && (9..=25).contains(&y);
-            let in_clip = (11..=20).contains(&x) && (5..=11).contains(&y);
-            let in_wire = (10..=22).contains(&x) && (17..=19).contains(&y);
-            let pixel = if in_wire {
-                [245, 123, 92, 255]
-            } else if in_clip {
-                [31, 107, 95, 255]
-            } else if in_body {
-                [35, 43, 51, 255]
-            } else {
-                [0, 0, 0, 0]
-            };
-            rgba.extend_from_slice(&pixel);
-        }
-    }
-    Image::new_owned(rgba, size as u32, size as u32)
+    Image::from_bytes(include_bytes!("../icons/32x32.png")).expect("BeforePaste tray icon should be a valid PNG")
 }
 
 fn tray_lang() -> Lang {

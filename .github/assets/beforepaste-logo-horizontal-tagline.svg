@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" fill="none">
+  <title>beforepaste logo</title>
+  <desc>Minimal clipboard, redaction and safe paste mark for beforepaste.</desc>
+
+
+    <g transform="translate(92 62) scale(0.46)">
+      <rect x="94" y="100" width="324" height="342" rx="34" fill="none" stroke="#111827" stroke-width="28" stroke-linejoin="round"/>
+      <rect x="170" y="72" width="172" height="68" rx="16" fill="#111827"/>
+      <rect x="140" y="180" width="232" height="24" rx="3" fill="#111827"/>
+      <rect x="140" y="236" width="226" height="24" rx="3" fill="#111827"/>
+      <rect x="204" y="236" width="116" height="24" rx="3" fill="#22C55E"/>
+      <rect x="140" y="292" width="154" height="24" rx="3" fill="#111827"/>
+      <path d="M295 334 L342 381 L430 286" fill="none" stroke="#22C55E" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  <text x="360" y="168" font-family="Inter, Arial, Helvetica, sans-serif" font-size="92" font-weight="760" letter-spacing="-3" fill="#111827">before<tspan fill="#22C55E">paste</tspan></text>
+  <text x="365" y="222" font-family="Inter, Arial, Helvetica, sans-serif" font-size="26" font-weight="500" letter-spacing="0.2" fill="#1F2937">Paste to AI without leaking secrets</text>
+
+</svg>
