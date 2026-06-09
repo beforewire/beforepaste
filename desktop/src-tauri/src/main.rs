@@ -4,6 +4,8 @@
 )]
 
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "macos")]
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -227,7 +229,7 @@ fn install_vscode_bridge(app: tauri::AppHandle) -> Result<VscodeBridgeStatus, St
 }
 
 #[tauri::command]
-fn open_privacy_settings(kind: String) -> Result<(), String> {
+fn open_privacy_settings(app: tauri::AppHandle, kind: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let url = match kind.as_str() {
@@ -236,7 +238,7 @@ fn open_privacy_settings(kind: String) -> Result<(), String> {
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
             }
             "input_monitoring" => {
-                let _ = request_input_monitoring_trust();
+                let _ = request_input_monitoring_trust_on_main_thread(&app);
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
             }
             "automation" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
@@ -390,7 +392,7 @@ fn save_config(
     if protect_normal_paste {
         #[cfg(target_os = "macos")]
         {
-            let _ = request_input_monitoring_trust();
+            let _ = request_input_monitoring_trust_on_main_thread(&app);
         }
         ensure_normal_paste_event_tap(state.inner().clone()).map_err(|e| e.to_string())?;
     }
@@ -418,7 +420,7 @@ fn set_normal_paste_mode(
     if protect_normal_paste {
         #[cfg(target_os = "macos")]
         {
-            let _ = request_input_monitoring_trust();
+            let _ = request_input_monitoring_trust_on_main_thread(app);
         }
         ensure_normal_paste_event_tap(Arc::clone(&state)).map_err(|e| e.to_string())?;
     }
@@ -1079,6 +1081,16 @@ fn request_accessibility_trust() -> bool {
 }
 
 #[cfg(target_os = "macos")]
+fn request_input_monitoring_trust_on_main_thread(app: &tauri::AppHandle) -> Result<bool, String> {
+    let (tx, rx) = mpsc::channel();
+    app.run_on_main_thread(move || {
+        let _ = tx.send(request_input_monitoring_trust());
+    })
+    .map_err(|e| e.to_string())?;
+    Ok(rx.recv_timeout(Duration::from_millis(1200)).unwrap_or(false))
+}
+
+#[cfg(target_os = "macos")]
 fn request_input_monitoring_trust() -> bool {
     #[link(name = "CoreGraphics", kind = "framework")]
     unsafe extern "C" {
@@ -1095,7 +1107,28 @@ fn request_input_monitoring_trust() -> bool {
     let cg_granted = unsafe { CGRequestListenEventAccess() };
     // kIOHIDRequestTypeListenEvent.
     let hid_granted = unsafe { IOHIDRequestAccess(1) };
-    cg_granted || hid_granted
+    let tap_granted = trigger_input_monitoring_event_tap_probe();
+    cg_granted || hid_granted || tap_granted
+}
+
+#[cfg(target_os = "macos")]
+fn trigger_input_monitoring_event_tap_probe() -> bool {
+    use core_graphics::event::{
+        CGEvent, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
+        CGEventType, CallbackResult,
+    };
+
+    // Some macOS builds do not add an app to Input Monitoring after the request
+    // API alone. Creating a short-lived listen-only tap exercises the exact TCC
+    // path that owns the Input Monitoring list without intercepting keystrokes.
+    CGEventTap::new(
+        CGEventTapLocation::HID,
+        CGEventTapPlacement::HeadInsertEventTap,
+        CGEventTapOptions::ListenOnly,
+        vec![CGEventType::KeyDown],
+        |_proxy, _event_type, _event: &CGEvent| CallbackResult::Keep,
+    )
+    .is_ok()
 }
 
 #[cfg(not(target_os = "macos"))]
