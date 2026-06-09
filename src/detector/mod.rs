@@ -53,6 +53,65 @@ pub struct Detector {
     enable_entropy: bool,
 }
 
+/// Keys such as `tokensUsed` or `prompt_tokens` describe model usage metrics,
+/// not credentials. Keep this central so deep-scan and assignment redaction
+/// apply the same false-positive guard.
+pub(crate) fn is_usage_metric_key(key: &str) -> bool {
+    let lower = key.trim().to_ascii_lowercase();
+    if lower.is_empty() {
+        return false;
+    }
+    let compact: String = lower
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect();
+    if compact.is_empty() {
+        return false;
+    }
+
+    const EXACT: &[&str] = &[
+        "cachedtokens",
+        "completiontokens",
+        "inputtokens",
+        "maxtokens",
+        "numtokens",
+        "outputtokens",
+        "prompttokens",
+        "remainingtokens",
+        "tokencount",
+        "tokenlimit",
+        "tokenusage",
+        "tokenscount",
+        "tokensremaining",
+        "tokensused",
+        "totaltokens",
+        "usagetokens",
+    ];
+    if EXACT
+        .iter()
+        .any(|value| compact == *value || compact.ends_with(value) || compact.contains(value))
+    {
+        return true;
+    }
+
+    compact.ends_with("tokens")
+        && [
+            "cached",
+            "completion",
+            "count",
+            "input",
+            "limit",
+            "max",
+            "output",
+            "prompt",
+            "remaining",
+            "total",
+            "usage",
+        ]
+        .iter()
+        .any(|word| compact.contains(word))
+}
+
 /// Secret-body byte class: the characters a wrapped token is made of.
 fn is_secret_body(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'=' | b'_' | b'.' | b'-')

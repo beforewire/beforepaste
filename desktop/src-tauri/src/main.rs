@@ -20,6 +20,7 @@ use beforepaste::protected_paste;
 use beforepaste::redact_cli;
 use beforepaste::stats;
 use beforepaste::targets::{self, CliTargetCatalogEntry, TargetCatalogEntry};
+use beforepaste::{notify, updater};
 use serde::{Deserialize, Serialize};
 use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -30,7 +31,6 @@ use tauri::State;
 use tauri::WindowEvent;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tauri_plugin_global_shortcut::ShortcutState;
-use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TargetSnapshot {
@@ -42,9 +42,12 @@ struct TargetSnapshot {
 #[derive(Debug, Clone, Serialize)]
 struct UpdateStatus {
     available: bool,
+    skipped: bool,
     version: Option<String>,
     current_version: Option<String>,
     body: Option<String>,
+    html_url: Option<String>,
+    download_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -431,26 +434,116 @@ fn clear_manual_target() -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn check_for_update(app: tauri::AppHandle) -> Result<UpdateStatus, String> {
-    let update = app
-        .updater()
-        .map_err(|e| e.to_string())?
-        .check()
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(match update {
-        Some(update) => UpdateStatus {
-            available: true,
-            version: Some(update.version),
-            current_version: Some(update.current_version),
-            body: update.body,
-        },
-        None => UpdateStatus {
-            available: false,
-            version: None,
-            current_version: None,
-            body: None,
-        },
+fn check_for_update() -> Result<UpdateStatus, String> {
+    let config = Config::load();
+    let info = updater::latest_release_info().map_err(|e| e.to_string())?;
+    record_seen_update_version(&info.tag);
+    Ok(update_status_from_info(&info, &config))
+}
+
+#[tauri::command]
+fn skip_update_version(version: String) -> Result<Config, String> {
+    let version = version.trim();
+    if version.is_empty() {
+        return Err("version is empty".to_string());
+    }
+    let mut config = Config::load();
+    config.skip_version = Some(version.to_string());
+    config.save().map_err(|e| e.to_string())?;
+    Ok(config)
+}
+
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    let allowed = [
+        "https://github.com/beforewire/beforepaste/",
+        "https://beforepaste.com/",
+    ];
+    if !allowed.iter().any(|prefix| url.starts_with(prefix)) {
+        return Err("unsupported URL".to_string());
+    }
+    open_external_url(&url)
+}
+
+fn update_status_from_info(info: &updater::LatestReleaseInfo, config: &Config) -> UpdateStatus {
+    let skipped = config.skip_version.as_deref() == Some(info.tag.as_str());
+    UpdateStatus {
+        available: info.available,
+        skipped,
+        version: Some(info.tag.clone()),
+        current_version: Some(updater::current_version().to_string()),
+        body: info.body.clone(),
+        html_url: info.html_url.clone(),
+        download_url: info
+            .desktop_download_url
+            .clone()
+            .or_else(|| info.html_url.clone()),
+    }
+}
+
+fn record_seen_update_version(tag: &str) {
+    let mut config = Config::load();
+    if config.last_seen_version.as_deref() == Some(tag) {
+        return;
+    }
+    config.last_seen_version = Some(tag.to_string());
+    if let Err(error) = config.save() {
+        desktop_debug(&format!("record update version failed: {error}"));
+    }
+}
+
+fn start_update_check(app: tauri::AppHandle) {
+    let config = Config::load();
+    if !config.check_for_updates {
+        return;
+    }
+    thread::spawn(move || match updater::latest_release_info() {
+        Ok(info) => {
+            let previous_seen = config.last_seen_version.clone();
+            let status = update_status_from_info(&info, &config);
+            record_seen_update_version(&info.tag);
+            if info.available && !status.skipped && previous_seen.as_deref() != Some(info.tag.as_str()) {
+                notify::update_available_notification(
+                    config.notification_timeout_secs,
+                    config.lang,
+                    updater::current_version(),
+                    &info.tag,
+                );
+            }
+            let _ = app.emit("beforepaste-update-status", status);
+        }
+        Err(error) => desktop_debug(&format!("update check failed: {error}")),
+    });
+}
+
+fn open_external_url(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut cmd = Command::new("/usr/bin/open");
+        cmd.arg(url);
+        cmd
+    };
+
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", "start", "", url]);
+        cmd
+    };
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let mut command = {
+        let mut cmd = Command::new("xdg-open");
+        cmd.arg(url);
+        cmd
+    };
+
+    command.status().map_err(|e| e.to_string()).and_then(|status| {
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("open URL exited with {status}"))
+        }
     })
 }
 
@@ -1553,7 +1646,9 @@ fn main() {
             save_config,
             set_manual_target,
             clear_manual_target,
-            check_for_update
+            check_for_update,
+            skip_update_version,
+            open_url
         ])
         .setup(|app| {
             let config = Config::load();
@@ -1606,9 +1701,8 @@ fn main() {
             build_tray(app, &state)?;
             update_tray_status(&app.handle().clone(), &state);
             start_target_monitor(app.handle().clone(), Arc::clone(&state));
-            if !config.setup_prompt_dismissed {
-                schedule_preferences_panel(app.handle().clone(), "paste");
-            } else if !config.onboarding_done {
+            start_update_check(app.handle().clone());
+            if !config.setup_prompt_dismissed || !config.onboarding_done {
                 schedule_preferences_panel(app.handle().clone(), "paste");
             }
             if !config.onboarding_done {

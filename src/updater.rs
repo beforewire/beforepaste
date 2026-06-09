@@ -201,8 +201,73 @@ pub enum UpdateStatus {
     Failed,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct LatestReleaseInfo {
+    pub tag: String,
+    pub body: Option<String>,
+    pub html_url: Option<String>,
+    pub desktop_download_url: Option<String>,
+    pub available: bool,
+}
+
 pub fn current_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
+}
+
+/// Fetch the latest GitHub release and choose the best desktop download URL
+/// for the current platform. This only checks; it never installs anything.
+#[allow(dead_code)]
+pub fn latest_release_info() -> anyhow::Result<LatestReleaseInfo> {
+    let agent = agent();
+    let release = fetch_latest_release(&agent)?;
+    let tag = release["tag_name"]
+        .as_str()
+        .ok_or_else(|| anyhow!("release missing tag_name"))?
+        .to_string();
+    let body = release["body"].as_str().map(|s| s.to_string());
+    let html_url = release["html_url"].as_str().map(|s| s.to_string());
+    let desktop_download_url = desktop_download_url(&release);
+    Ok(LatestReleaseInfo {
+        available: is_newer(&tag),
+        tag,
+        body,
+        html_url,
+        desktop_download_url,
+    })
+}
+
+#[allow(dead_code)]
+fn desktop_asset_candidates() -> &'static [&'static str] {
+    match std::env::consts::OS {
+        "macos" => &["beforepaste-desktop-macos.dmg"],
+        "windows" => &[
+            "beforepaste-desktop-windows-setup.exe",
+            "beforepaste-desktop-windows.msi",
+        ],
+        "linux" => &[
+            "beforepaste-desktop-linux.AppImage",
+            "beforepaste-desktop-linux.deb",
+            "beforepaste-desktop-linux.rpm",
+        ],
+        _ => &[],
+    }
+}
+
+#[allow(dead_code)]
+fn desktop_download_url(release: &Value) -> Option<String> {
+    let assets = release["assets"].as_array()?;
+    desktop_asset_candidates().iter().find_map(|candidate| {
+        assets.iter().find_map(|asset| {
+            (asset["name"].as_str() == Some(candidate))
+                .then(|| {
+                    asset["browser_download_url"]
+                        .as_str()
+                        .map(|s| s.to_string())
+                })
+                .flatten()
+        })
+    })
 }
 
 /// Check-only: queries the latest release and reports whether a newer one

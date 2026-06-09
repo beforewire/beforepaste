@@ -464,7 +464,10 @@ fn is_do_not_redact_key(key: &str) -> bool {
         "x-shopify-hmac",
         "webhook-signature",
     ];
-    MARKERS.iter().any(|m| key.contains(m)) || key == "state" || key == "nonce"
+    super::is_usage_metric_key(key)
+        || MARKERS.iter().any(|m| key.contains(m))
+        || key == "state"
+        || key == "nonce"
 }
 
 fn kv_pattern_set() -> &'static [regex::Regex] {

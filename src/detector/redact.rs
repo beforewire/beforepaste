@@ -102,6 +102,8 @@ pub fn redact_with_spans(
     // itself (`FOO_SECRET=...`). In both cases the sensitive material is the
     // value: redact only the RHS so the user still sees which variable was
     // protected.
+    spans.retain(|span| !is_usage_metric_assignment_span(text, span.0, span.1));
+
     for span in &mut spans {
         if let Some(ctx) = assignment_context(text, span.0, span.1) {
             if ctx.span_touches_key {
@@ -200,7 +202,32 @@ struct AssignmentContext {
     span_touches_key: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AssignmentParts {
+    key: String,
+    sep: usize,
+    value_start: usize,
+    value_end: usize,
+}
+
 fn assignment_context(text: &str, s: usize, e: usize) -> Option<AssignmentContext> {
+    let parts = assignment_parts(text, s, e)?;
+    if !is_secret_assignment_key(&parts.key) {
+        return None;
+    }
+    let span_touches_key = s <= parts.sep;
+    if !(span_touches_key || (parts.value_start <= s && e <= parts.value_end)) {
+        return None;
+    }
+    Some(AssignmentContext {
+        key: parts.key,
+        value_start: parts.value_start,
+        value_end: parts.value_end,
+        span_touches_key,
+    })
+}
+
+fn assignment_parts(text: &str, s: usize, e: usize) -> Option<AssignmentParts> {
     if !(s < e && e <= text.len()) {
         return None;
     }
@@ -211,11 +238,7 @@ fn assignment_context(text: &str, s: usize, e: usize) -> Option<AssignmentContex
     let (sep_rel, sep_len) = assignment_separator(line)?;
     let sep = line_start + sep_rel;
 
-    let key = normalize_assignment_key(&line[..sep_rel])?;
-    if !is_secret_assignment_key(key) {
-        return None;
-    }
-
+    let key = normalize_assignment_key(&line[..sep_rel])?.to_string();
     let mut vs = sep + sep_len;
     while vs < line_end && matches!(b[vs], b' ' | b'\t') {
         vs += 1;
@@ -242,16 +265,30 @@ fn assignment_context(text: &str, s: usize, e: usize) -> Option<AssignmentContex
     if value_start >= value_end {
         return None;
     }
-    let span_touches_key = s <= sep;
-    if !(span_touches_key || (value_start <= s && e <= value_end)) {
-        return None;
-    }
-    Some(AssignmentContext {
-        key: key.to_string(),
+
+    Some(AssignmentParts {
+        key,
+        sep,
         value_start,
         value_end,
-        span_touches_key,
     })
+}
+
+fn is_usage_metric_assignment_span(text: &str, s: usize, e: usize) -> bool {
+    let Some(parts) = assignment_parts(text, s, e) else {
+        return false;
+    };
+    super::is_usage_metric_key(&parts.key)
+        && is_usage_metric_value(&text[parts.value_start..parts.value_end])
+}
+
+fn is_usage_metric_value(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty()
+        && value.chars().any(|ch| ch.is_ascii_digit())
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || matches!(ch, '_' | ',' | '.' | '+' | '-' | ' ' | '\t'))
 }
 
 fn assignment_separator(line: &str) -> Option<(usize, usize)> {
@@ -287,6 +324,10 @@ fn normalize_assignment_key(raw: &str) -> Option<&str> {
 }
 
 fn is_secret_assignment_key(key: &str) -> bool {
+    if super::is_usage_metric_key(key) {
+        return false;
+    }
+
     let mut chars = key.chars();
     let Some(first) = chars.next() else {
         return false;

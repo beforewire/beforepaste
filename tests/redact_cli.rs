@@ -135,3 +135,28 @@ fn typed_dotenv_assignment_redaction_is_idempotent_with_unbalanced_quote() {
         "already-redacted typed marker should not be detected again"
     );
 }
+
+#[test]
+fn token_usage_metrics_are_not_redacted() {
+    let mut cfg = fresh_cfg();
+    cfg.redact_style = RedactStyle::Typed;
+    cfg.enable_deep_scan = true;
+    let det = Detector::from_config(&cfg);
+    let input = concat!(
+        "tokensUsed=6890769\n",
+        "inputTokens=12345\n",
+        "output_tokens: 67890\n",
+        "total_token_count=99999999\n",
+        "tokens_used_total=1,234,567\n",
+        "api_token=abc12345678901234567890\n",
+    );
+    let (out, names) = redact_with(&det, &cfg, input);
+
+    assert!(out.contains("tokensUsed=6890769"));
+    assert!(out.contains("inputTokens=12345"));
+    assert!(out.contains("output_tokens: 67890"));
+    assert!(out.contains("total_token_count=99999999"));
+    assert!(out.contains("tokens_used_total=1,234,567"));
+    assert!(out.contains("api_token=[API_TOKEN]"));
+    assert!(!names.is_empty(), "api_token should still be detected");
+}

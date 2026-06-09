@@ -284,6 +284,44 @@
   margin-top: 8px;
 }
 
+.bp-update-card {
+  border: 1px solid rgba(60, 60, 67, 0.14);
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: rgba(120, 120, 128, 0.055);
+}
+
+.bp-update-card strong,
+.bp-update-card small {
+  display: block;
+}
+
+.bp-update-card strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bp-update-card small {
+  margin-top: 3px;
+  color: var(--mac-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.bp-update-card.is-ok {
+  border-color: var(--bp-success-border);
+  background: var(--bp-success-fill);
+}
+
+.bp-update-card.is-warn {
+  border-color: var(--bp-warn-border);
+  background: rgba(245, 123, 92, 0.055);
+}
+
+.bp-update-card.is-muted {
+  color: rgba(60, 60, 67, 0.74);
+}
+
 @media (max-width: 720px) {
   .bp-test-grid {
     grid-template-columns: 1fr;

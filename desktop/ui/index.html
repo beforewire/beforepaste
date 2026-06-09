@@ -98,6 +98,7 @@
                 <div class="bp-inline-actions">
                   <span id="setup-vscode-status" class="bp-status-pill">Checking</span>
                   <button id="setup-install-vscode-bridge" class="bp-button bp-button-small" type="button" hidden>Install extension</button>
+                  <button id="setup-skip-vscode-bridge" class="bp-button bp-button-small" type="button">I don't use VS Code</button>
                 </div>
               </div>
             </div>
@@ -227,10 +228,19 @@
             <div class="bp-setting-row bp-setting-row-stack">
               <span>
                 <strong>Desktop updates</strong>
-                <small>In-app desktop updates are not enabled in this public source release. Download new builds from GitHub Releases.</small>
+                <small>Checks GitHub Releases and reminds you to download newer builds. It does not auto-install updates.</small>
               </span>
+              <div id="update-status-card" class="bp-update-card is-muted">
+                <span>
+                  <strong id="update-status-title">Checking for updates</strong>
+                  <small id="update-status-copy">BeforePaste checks GitHub Releases and only reminds you when a newer build is available.</small>
+                </span>
+              </div>
               <div class="bp-button-row">
-                <button id="check-update" class="bp-button" type="button">GitHub Releases</button>
+                <button id="check-update" class="bp-button" type="button">Check for update</button>
+                <button id="download-update" class="bp-button" type="button" hidden>Download latest build</button>
+                <button id="skip-update" class="bp-button" type="button" hidden>Skip this version</button>
+                <button id="remind-update-later" class="bp-button" type="button" hidden>Remind me later</button>
               </div>
             </div>
           </div>

@@ -4,11 +4,13 @@ pub mod config;
 pub mod detector;
 pub mod lang;
 pub mod notify;
+pub mod proc;
 pub mod protected_paste;
 pub mod redact_cli;
 pub mod shell_rc;
 pub mod stats;
 pub mod targets;
+pub mod updater;
 
 /// Product name. Single source so window/notification/shortcut labels stay
 /// consistent; deliberately not localized (it is a proper noun).

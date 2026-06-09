@@ -60,6 +60,10 @@ Stable latest-download link for the website and docs:
 Other assets, ARM builds, and checksums are available from the
 [full releases page](https://github.com/beforewire/beforepaste/releases).
 
+The desktop app checks GitHub Releases for newer preview builds and can remind
+you to download them. It does not auto-install updates yet; use the download
+button in Preferences or the stable `releases/latest` links above.
+
 Windows and Linux desktop artifacts are paused for the public release. Windows
 desktop packaging is still being stabilized, and Linux desktop packaging is
 paused until the upstream Tauri Linux GTK dependency chain moves past the
@@ -148,6 +152,11 @@ integrated terminals. It does not redact clipboard contents itself. The desktop
 app shows the extension status in Preferences and Doctor; if the bundled `.vsix`
 is available, the `Install extension` button installs it with the VS Code `code`
 CLI.
+
+You only need this extension if you use Codex, Claude Code, Gemini CLI, aider,
+Continue, or opencode inside VS Code integrated terminals. It is not required
+for AI websites, native AI apps, or the standalone terminal apps supported by
+BeforePaste.
 
 Release download:
 

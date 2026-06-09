@@ -22,6 +22,7 @@ const fields = {
   setupVscodeCopy: document.querySelector("#setup-vscode-copy"),
   setupVscodeStatus: document.querySelector("#setup-vscode-status"),
   setupInstallVscodeBridge: document.querySelector("#setup-install-vscode-bridge"),
+  setupSkipVscodeBridge: document.querySelector("#setup-skip-vscode-bridge"),
   beforepasteEnabled: document.querySelector("#beforepaste-enabled"),
   modeAdvanced: document.querySelector("#mode-advanced"),
   modeSafeOnly: document.querySelector("#mode-safe-only"),
@@ -35,6 +36,13 @@ const fields = {
   sensitivity: document.querySelector("#sensitivity"),
   checkUpdates: document.querySelector("#check-updates"),
   autoInstall: document.querySelector("#auto-install"),
+  updateStatusCard: document.querySelector("#update-status-card"),
+  updateStatusTitle: document.querySelector("#update-status-title"),
+  updateStatusCopy: document.querySelector("#update-status-copy"),
+  checkUpdate: document.querySelector("#check-update"),
+  downloadUpdate: document.querySelector("#download-update"),
+  skipUpdate: document.querySelector("#skip-update"),
+  remindUpdateLater: document.querySelector("#remind-update-later"),
   redactStyle: document.querySelector("#redact-style"),
   redactPattern: document.querySelector("#redact-pattern"),
   targetList: document.querySelector("#target-list"),
@@ -81,6 +89,7 @@ let currentLang = "EN";
 let lastRuntimeStatus;
 let lastVscodeBridgeStatus;
 let lastTestPayloadStatus;
+let lastUpdateStatus;
 let pasteTestTargetActive = false;
 const pendingPrivacyChecks = new Set();
 const lastPanelKey = "beforepaste:last-panel";
@@ -106,6 +115,8 @@ const copy = {
     checking: "Checking",
     installFailed: "Install failed",
     installDone: "Extension installed",
+    skipVscode: "I don't use VS Code",
+    vscodeDismissed: "VS Code reminder hidden. You can still install the extension from Doctor.",
     granted: "✅ Granted",
     missing: "❌ Not granted",
     available: "✅ Available",
@@ -160,6 +171,22 @@ const copy = {
     testRawCopy: "Check Cmd+V interception capability, or try the Safe Paste shortcut.",
     testChangedTitle: "Paste result changed",
     testChangedCopy: "The text does not match the expected protected sample yet.",
+    updateCheckingTitle: "Checking for updates",
+    updateCheckingCopy: "BeforePaste checks GitHub Releases and only reminds you when a newer build is available.",
+    updateReadyTitle: "BeforePaste is up to date",
+    updateReadyCopy: "Current version: {current}.",
+    updateAvailableTitle: "New version available",
+    updateAvailableCopy: "{current} → {latest}. Download the newest preview build from GitHub Releases.",
+    updateSkippedTitle: "Version skipped",
+    updateSkippedCopy: "{latest} is hidden. The next release will be shown again.",
+    updateFailedTitle: "Could not check updates",
+    updateFailedCopy: "Open GitHub Releases manually if you want to download the latest build.",
+    checkUpdate: "Check for update",
+    downloadUpdate: "Download latest build",
+    skipUpdate: "Skip this version",
+    remindLater: "Remind me later",
+    remindLaterDone: "Update reminder hidden for now.",
+    skipUpdateDone: "This version will be skipped.",
   },
   ZH: {
     panels: {
@@ -181,6 +208,8 @@ const copy = {
     checking: "检查中",
     installFailed: "安装失败",
     installDone: "插件已安装",
+    skipVscode: "我不用 VS Code",
+    vscodeDismissed: "已隐藏 VS Code 插件提醒；之后仍可在诊断页安装。",
     granted: "✅ 已授权",
     missing: "❌ 未授权",
     available: "✅ 当前可用",
@@ -235,6 +264,22 @@ const copy = {
     testRawCopy: "你看到的是原始测试内容，请检查 Cmd+V 接管能力，或改用安全粘贴快捷键。",
     testChangedTitle: "粘贴结果不完整",
     testChangedCopy: "当前内容还不是预期的脱敏结果，请重新复制测试内容再试一次。",
+    updateCheckingTitle: "正在检查更新",
+    updateCheckingCopy: "BeforePaste 会检查 GitHub Releases；只有发现新版本时才提醒你下载。",
+    updateReadyTitle: "已是最新版本",
+    updateReadyCopy: "当前版本：{current}。",
+    updateAvailableTitle: "发现新版本",
+    updateAvailableCopy: "{current} → {latest}。请从 GitHub Releases 下载最新 preview 版本。",
+    updateSkippedTitle: "已跳过这个版本",
+    updateSkippedCopy: "{latest} 已隐藏；下一个版本发布后会再次提醒。",
+    updateFailedTitle: "暂时无法检查更新",
+    updateFailedCopy: "如果需要新版，可以手动打开 GitHub Releases 下载。",
+    checkUpdate: "检查更新",
+    downloadUpdate: "下载最新版本",
+    skipUpdate: "跳过这个版本",
+    remindLater: "稍后提醒",
+    remindLaterDone: "已暂时隐藏更新提醒。",
+    skipUpdateDone: "已跳过这个版本。",
   },
 };
 
@@ -298,6 +343,7 @@ function applyStaticCopy() {
     ? "用于识别 VS Code 集成终端中的 Codex、Claude Code、Gemini CLI；插件侧边栏/Chat 面板建议使用安全粘贴快捷键。"
     : "Required for Codex, Claude Code, and Gemini CLI in VS Code integrated terminals. Use Safe Paste for extension sidebars or chat panels.";
   fields.setupInstallVscodeBridge.textContent = tr("installExtension");
+  fields.setupSkipVscodeBridge.textContent = tr("skipVscode");
   fields.doctorVscodeTitle.textContent = currentLang === "ZH" ? "VS Code 插件" : "VS Code extension";
   fields.doctorVscodeCopy.textContent = currentLang === "ZH"
     ? "如果你会粘贴到 VS Code 集成终端里的 Codex、Claude Code 或 Gemini CLI，请安装此插件。"
@@ -377,7 +423,7 @@ function applyStaticCopy() {
     currentLang === "ZH" ? "扫描 JSON、配置片段等结构化内容中的隐藏 secret。" : "Scan structured payloads and embedded secret shapes.",
     currentLang === "ZH" ? "识别随机度很高的未知 token，可能带来更多误判。" : "Detect unknown high-entropy tokens. This can increase false positives.",
     currentLang === "ZH" ? "BeforePaste 只会自动保护勾选的应用、网页和终端场景。" : "BeforePaste only protects the checked apps, websites, and terminal contexts.",
-    currentLang === "ZH" ? "当前公开源码版未启用桌面端内置更新，请从 GitHub Releases 下载新版。" : "In-app desktop updates are not enabled in this public source release. Download new builds from GitHub Releases.",
+    currentLang === "ZH" ? "检查 GitHub Releases；发现新版本时提醒你手动下载，不会自动安装。" : "Checks GitHub Releases and reminds you to download newer builds. It does not auto-install updates.",
     currentLang === "ZH" ? "检查粘贴模式、快捷键、目标识别和权限状态。" : "Checks the selected paste mode, shortcuts, target detection, and permissions.",
     currentLang === "ZH" ? "更新 preview 版本后，如授权状态异常，请删除旧授权并重新授权。" : "After a preview update, reset old macOS permission records if Doctor still reports missing access.",
     currentLang === "ZH" ? "用于执行最后一步粘贴。系统设置里看到已授权，不代表当前这份 app 已被 macOS 接受；请以 Doctor 状态为准。" : "Needed to perform paste actions. System Settings may show BeforePaste as enabled even when this app build is not accepted; trust Doctor status.",
@@ -391,7 +437,10 @@ function applyStaticCopy() {
 
   document.querySelector(".bp-status-pill.is-on").textContent = tr("recommended");
   document.querySelector("#clear-target").textContent = tr("autoDetection");
-  document.querySelector("#check-update").textContent = currentLang === "ZH" ? "GitHub Releases" : "GitHub Releases";
+  fields.checkUpdate.textContent = tr("checkUpdate");
+  fields.downloadUpdate.textContent = tr("downloadUpdate");
+  fields.skipUpdate.textContent = tr("skipUpdate");
+  fields.remindUpdateLater.textContent = tr("remindLater");
   const styleOptions = fields.redactStyle?.querySelectorAll("option") || [];
   const styleLabels = currentLang === "ZH"
     ? ["固定标记", "类型标签", "示例占位", "直接删除"]
@@ -418,6 +467,7 @@ function applyStaticCopy() {
   for (const button of document.querySelectorAll("[data-open-privacy]")) {
     button.textContent = currentLang === "ZH" ? "打开" : "Open";
   }
+  renderUpdateStatus(lastUpdateStatus);
 }
 
 function renderConfig(config, platform = currentPlatform) {
@@ -493,6 +543,8 @@ function activatePanel(panel, options = {}) {
     refreshDoctor().catch((error) => {
       setStatus(String(error));
     });
+  } else if (nextPanel === "updates" && currentConfig?.check_for_updates) {
+    checkLatestVersion({ silent: true }).catch((error) => setStatus(String(error)));
   } else if (pasteTestTargetActive) {
     setPasteTestTargetActive(false).catch((error) => setStatus(String(error)));
   }
@@ -673,17 +725,20 @@ function renderSetupChecklist() {
 
   let vscodeLabel = tr("checking");
   let vscodeState = "muted";
+  const vscodeDismissed = Boolean(currentConfig?.vscode_bridge_dismissed);
   if (vscode) {
     vscodeLabel = vscode.installed
       ? tr("installed")
-      : (currentLang === "ZH" ? "建议安装" : "Recommended");
-    vscodeState = vscode.installed ? "ok" : "warn";
-    fields.setupInstallVscodeBridge.hidden = vscode.installed || !vscode.vsix_path;
+      : (vscodeDismissed ? (currentLang === "ZH" ? "已忽略" : "Ignored") : (currentLang === "ZH" ? "建议安装" : "Recommended"));
+    vscodeState = vscode.installed ? "ok" : (vscodeDismissed ? "muted" : "warn");
+    fields.setupInstallVscodeBridge.hidden = vscode.installed || vscodeDismissed || !vscode.vsix_path;
     fields.setupInstallVscodeBridge.title = vscode.installed
       ? (vscode.message || "")
       : (vscode.install_command || vscode.message || "");
+    fields.setupSkipVscodeBridge.hidden = vscode.installed || vscodeDismissed;
   } else {
     fields.setupInstallVscodeBridge.hidden = true;
+    fields.setupSkipVscodeBridge.hidden = vscodeDismissed;
   }
   setDiagnosticStatus(fields.setupVscodeStatus, vscodeLabel, vscodeState);
 
@@ -700,7 +755,7 @@ function renderSetupChecklist() {
     fields.setupCopy.textContent = currentLang === "ZH"
       ? "请先确认 macOS 授权、Cmd+V 自动保护和安全粘贴快捷键。否则安装了也可能没有实际保护。"
       : "Confirm macOS permissions, automatic Cmd+V protection, and the safe paste shortcut before relying on it.";
-  } else if (!vscodeOk) {
+  } else if (!vscodeOk && !vscodeDismissed) {
     fields.setupTitle.textContent = currentLang === "ZH"
       ? (status.protect_normal_paste
         ? "基础保护已就绪；建议安装 VS Code 插件"
@@ -883,6 +938,91 @@ function renderVscodeBridgeStatus(status) {
   renderSetupChecklist();
 }
 
+function formatCopy(template, values) {
+  return String(template || "").replace(/\{(\w+)\}/g, (_, key) => values?.[key] ?? "");
+}
+
+function setUpdateCard(title, detail, state = "muted") {
+  fields.updateStatusTitle.textContent = title;
+  fields.updateStatusCopy.textContent = detail;
+  fields.updateStatusCard.classList.remove("is-ok", "is-warn", "is-muted");
+  fields.updateStatusCard.classList.add(`is-${state}`);
+}
+
+function renderUpdateStatus(status) {
+  lastUpdateStatus = status || null;
+  fields.downloadUpdate.hidden = true;
+  fields.skipUpdate.hidden = true;
+  fields.remindUpdateLater.hidden = true;
+  fields.downloadUpdate.dataset.url = "";
+  fields.skipUpdate.dataset.version = "";
+
+  if (!status) {
+    setUpdateCard(tr("updateCheckingTitle"), tr("updateCheckingCopy"), "muted");
+    return;
+  }
+
+  const current = status.current_version || currentConfig?.version || "";
+  const latest = status.version || "";
+  if (status.available && status.skipped) {
+    setUpdateCard(
+      tr("updateSkippedTitle"),
+      formatCopy(tr("updateSkippedCopy"), { current, latest }),
+      "muted",
+    );
+    return;
+  }
+  if (status.available) {
+    setUpdateCard(
+      tr("updateAvailableTitle"),
+      formatCopy(tr("updateAvailableCopy"), { current, latest }),
+      "warn",
+    );
+    const url = status.download_url || status.html_url;
+    fields.downloadUpdate.hidden = !url;
+    fields.downloadUpdate.dataset.url = url || "";
+    fields.skipUpdate.hidden = !latest;
+    fields.skipUpdate.dataset.version = latest;
+    fields.remindUpdateLater.hidden = false;
+    return;
+  }
+  setUpdateCard(
+    tr("updateReadyTitle"),
+    formatCopy(tr("updateReadyCopy"), { current, latest }),
+    "ok",
+  );
+}
+
+function renderUpdateFailure(error) {
+  lastUpdateStatus = null;
+  fields.downloadUpdate.hidden = false;
+  fields.downloadUpdate.dataset.url = "https://github.com/beforewire/beforepaste/releases/latest";
+  fields.skipUpdate.hidden = true;
+  fields.remindUpdateLater.hidden = true;
+  setUpdateCard(
+    tr("updateFailedTitle"),
+    `${tr("updateFailedCopy")} ${String(error || "")}`.trim(),
+    "warn",
+  );
+}
+
+async function checkLatestVersion({ silent = false } = {}) {
+  renderUpdateStatus(null);
+  fields.checkUpdate.disabled = true;
+  try {
+    const status = await invoke("check_for_update");
+    renderUpdateStatus(status);
+    if (!silent) {
+      setStatus(status.available && !status.skipped ? tr("updateAvailable") : tr("statusRefreshed"));
+    }
+  } catch (error) {
+    renderUpdateFailure(error);
+    if (!silent) setStatus(String(error));
+  } finally {
+    fields.checkUpdate.disabled = false;
+  }
+}
+
 function normalizeTestText(value) {
   return String(value || "").replace(/\r\n/g, "\n").trim();
 }
@@ -985,6 +1125,7 @@ function collectConfig() {
     check_for_updates: Boolean(currentConfig.check_for_updates),
     auto_install: Boolean(currentConfig.auto_install),
     setup_prompt_dismissed: Boolean(currentConfig.setup_prompt_dismissed),
+    vscode_bridge_dismissed: Boolean(currentConfig.vscode_bridge_dismissed),
     lang: fields.language.value,
     redact_style: fields.redactStyle.value,
     redact_pattern: fields.redactPattern.value || "[REDACTED]",
@@ -1211,8 +1352,43 @@ document.querySelector("#clear-target").addEventListener("click", async () => {
   setStatus(tr("usingAutoDetection"));
 });
 
-document.querySelector("#check-update").addEventListener("click", () => {
-  setStatus(tr("noUpdate"));
+fields.checkUpdate.addEventListener("click", () => {
+  checkLatestVersion().catch((error) => setStatus(String(error)));
+});
+
+fields.downloadUpdate.addEventListener("click", async () => {
+  const url = fields.downloadUpdate.dataset.url || "https://github.com/beforewire/beforepaste/releases/latest";
+  try {
+    await invoke("open_url", { url });
+  } catch (error) {
+    setStatus(String(error));
+  }
+});
+
+fields.skipUpdate.addEventListener("click", async () => {
+  const version = fields.skipUpdate.dataset.version || lastUpdateStatus?.version || "";
+  if (!version) return;
+  fields.skipUpdate.disabled = true;
+  try {
+    currentConfig = await invoke("skip_update_version", { version });
+    renderUpdateStatus({
+      ...lastUpdateStatus,
+      skipped: true,
+    });
+    setStatus(tr("skipUpdateDone"));
+  } catch (error) {
+    setStatus(String(error));
+  } finally {
+    fields.skipUpdate.disabled = false;
+  }
+});
+
+fields.remindUpdateLater.addEventListener("click", () => {
+  fields.downloadUpdate.hidden = true;
+  fields.skipUpdate.hidden = true;
+  fields.remindUpdateLater.hidden = true;
+  setUpdateCard(tr("updateReadyTitle"), tr("remindLaterDone"), "muted");
+  setStatus(tr("remindLaterDone"));
 });
 
 fields.doctorRefresh.addEventListener("click", async () => {
@@ -1236,6 +1412,24 @@ fields.setupDismissPrompt.addEventListener("click", async () => {
   } catch (error) {
     currentConfig.setup_prompt_dismissed = false;
     fields.setupDismissPrompt.hidden = false;
+    setStatus(String(error));
+  }
+});
+
+fields.setupSkipVscodeBridge.addEventListener("click", async () => {
+  currentConfig = {
+    ...currentConfig,
+    vscode_bridge_dismissed: true,
+  };
+  fields.setupSkipVscodeBridge.hidden = true;
+  fields.setupInstallVscodeBridge.hidden = true;
+  renderSetupChecklist();
+  try {
+    await invoke("save_config", { config: collectConfig() });
+    setStatus(tr("vscodeDismissed"));
+  } catch (error) {
+    currentConfig.vscode_bridge_dismissed = false;
+    renderSetupChecklist();
     setStatus(String(error));
   }
 });
@@ -1355,6 +1549,9 @@ if (tauriEvent?.listen) {
   });
   tauriEvent.listen("beforepaste-config-updated", () => {
     load().catch((error) => setStatus(String(error)));
+  });
+  tauriEvent.listen("beforepaste-update-status", (event) => {
+    renderUpdateStatus(event.payload);
   });
 }
 

@@ -58,6 +58,10 @@ pub struct Config {
     /// to guide the user through permissions and the paste test.
     #[serde(default)]
     pub setup_prompt_dismissed: bool,
+    /// Desktop-only: the VS Code bridge is optional unless the user runs AI
+    /// CLIs inside VS Code integrated terminals.
+    #[serde(default)]
+    pub vscode_bridge_dismissed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skip_version: Option<String>,
     /// Latest release tag observed by `upgrade-check` (e.g. "v1.2.3").
@@ -228,6 +232,7 @@ impl Default for Config {
             check_for_updates: true,
             auto_install: false,
             setup_prompt_dismissed: false,
+            vscode_bridge_dismissed: false,
             skip_version: None,
             last_seen_version: None,
             disabled_categories: Vec::new(),
