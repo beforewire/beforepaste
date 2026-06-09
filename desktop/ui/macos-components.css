@@ -389,6 +389,12 @@ button {
   filter: brightness(0.98);
 }
 
+.bp-button:disabled {
+  color: var(--mac-muted);
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
 .bp-button:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--mac-focus);

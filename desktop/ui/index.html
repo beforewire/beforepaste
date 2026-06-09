@@ -215,12 +215,12 @@
           <div class="bp-settings-group bp-doctor-permissions">
             <div class="bp-list-header">
               <strong>Permission checks</strong>
-              <small>Permission changes may require restarting BeforePaste before macOS reports them accurately.</small>
+              <small>After a preview update, reset old macOS permission records if Doctor still reports missing access.</small>
             </div>
             <div class="bp-setting-row bp-setting-row-compact">
               <span>
                 <strong>Accessibility</strong>
-                <small>Needed to perform paste actions. Restart BeforePaste after changing this permission.</small>
+                <small>Needed to perform paste actions. Trust Doctor status if System Settings still shows an old preview build as enabled.</small>
               </span>
               <div class="bp-inline-actions">
                 <span id="doctor-accessibility" class="bp-diagnostic-value">-</span>
@@ -230,7 +230,7 @@
             <div class="bp-setting-row bp-setting-row-compact">
               <span>
                 <strong>Input Monitoring</strong>
-                <small id="input-monitoring-copy">Needed for automatic Cmd+V protection. Restart BeforePaste after changing this permission.</small>
+                <small id="input-monitoring-copy">Needed for automatic Cmd+V protection. If access looks wrong after updating, reset macOS permissions and grant access again.</small>
               </span>
               <div class="bp-inline-actions">
                 <span id="doctor-input-monitoring" class="bp-diagnostic-value">-</span>
@@ -240,12 +240,23 @@
             <div class="bp-setting-row bp-setting-row-compact">
               <span>
                 <strong>App detection capability</strong>
-                <small>Needed to read browser tab and terminal context. Restart BeforePaste after changing this permission.</small>
+                <small>Needed to read browser tab and terminal context. If access looks wrong after updating, reset macOS permissions and grant access again.</small>
               </span>
               <div class="bp-inline-actions">
                 <span id="doctor-automation" class="bp-diagnostic-value">-</span>
                 <button class="bp-button bp-button-small" data-open-privacy="automation" type="button">Open</button>
               </div>
+            </div>
+          </div>
+
+          <div class="bp-settings-group bp-preview-permissions">
+            <div class="bp-permission-reset">
+              <span>
+                <strong id="doctor-reset-title">Preview build permission reset</strong>
+                <small id="doctor-reset-copy">If a newly downloaded preview build still appears unauthorized, remove the old macOS permission records and grant access again.</small>
+                <small id="doctor-reset-note">System Settings can show BeforePaste as enabled even when macOS has not accepted this exact app build. Trust Doctor status.</small>
+              </span>
+              <button id="doctor-reset-permissions" class="bp-button" type="button">Reset macOS permissions</button>
             </div>
           </div>
 

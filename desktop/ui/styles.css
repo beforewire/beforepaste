@@ -386,6 +386,32 @@
   border-top: 0;
 }
 
+.bp-permission-reset {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+}
+
+.bp-permission-reset span {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.bp-permission-reset strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.bp-permission-reset small {
+  max-width: 68ch;
+  color: var(--mac-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .bp-last-paste-row {
   padding-block: 9px;
 }
@@ -406,6 +432,7 @@
 
   .bp-doctor-summary,
   .bp-doctor-facts,
+  .bp-permission-reset,
   .bp-list-header,
   .bp-mode-row {
     grid-template-columns: 1fr;

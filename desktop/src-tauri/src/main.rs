@@ -208,6 +208,45 @@ fn open_privacy_settings(kind: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn reset_macos_permissions() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        const BUNDLE_ID: &str = "com.beforewire.beforepaste";
+        const SERVICES: &[&str] = &["Accessibility", "ListenEvent", "PostEvent", "AppleEvents"];
+
+        let mut errors = Vec::new();
+        for service in SERVICES {
+            match Command::new("/usr/bin/tccutil")
+                .args(["reset", service, BUNDLE_ID])
+                .output()
+            {
+                Ok(output) if output.status.success() => {}
+                Ok(output) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    let detail = if stderr.is_empty() {
+                        format!("tccutil reset {service} exited with {}", output.status)
+                    } else {
+                        format!("{service}: {stderr}")
+                    };
+                    errors.push(detail);
+                }
+                Err(error) => errors.push(format!("{service}: {error}")),
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("macOS permission reset is only available on macOS.".to_string())
+    }
+}
+
+#[tauri::command]
 fn get_runtime_status(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) -> RuntimeStatus {
     runtime_status(&app, state.inner())
 }
@@ -1376,6 +1415,7 @@ fn main() {
             get_vscode_bridge_status,
             install_vscode_bridge,
             open_privacy_settings,
+            reset_macos_permissions,
             get_runtime_status,
             save_config,
             set_manual_target,

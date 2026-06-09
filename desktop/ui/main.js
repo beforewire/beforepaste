@@ -32,6 +32,7 @@ const fields = {
   doctorInputMonitoring: document.querySelector("#doctor-input-monitoring"),
   inputMonitoringCopy: document.querySelector("#input-monitoring-copy"),
   doctorAutomation: document.querySelector("#doctor-automation"),
+  doctorResetPermissions: document.querySelector("#doctor-reset-permissions"),
   doctorLastPaste: document.querySelector("#doctor-last-paste"),
   vscodeBridgeStatus: document.querySelector("#vscode-bridge-status"),
   installVscodeBridge: document.querySelector("#install-vscode-bridge"),
@@ -70,7 +71,11 @@ const copy = {
     granted: "✅ Granted",
     missing: "❌ Not granted",
     restartPending: "Restart to confirm",
-    restartAfterPrivacy: "Restart BeforePaste after changing macOS permissions.",
+    restartAfterPrivacy: "After granting access, quit and reopen BeforePaste. Trust Doctor status over System Settings labels.",
+    resetPermissions: "Reset macOS permissions",
+    resetPermissionsConfirm: "This clears BeforePaste permission records for Accessibility, Input Monitoring, Paste Events, and Automation. Continue?",
+    resetPermissionsDone: "BeforePaste permission records were reset. Quit and reopen BeforePaste, then use Open to grant access again.",
+    resetPermissionsFailed: "Permission reset failed",
     recommended: "Recommended",
     web: "Web",
     webPending: "Web pending",
@@ -94,7 +99,7 @@ const copy = {
     safeShortcutAttention: "Safe shortcut needs attention",
     safeShortcutAttentionCopy: "Choose another shortcut if this one is already used by another app.",
     needsAttention: "needs attention",
-    restartCopy: "Restart BeforePaste or turn normal paste protection off and on again.",
+    restartCopy: "Restart BeforePaste. If this started after a preview update, reset macOS permissions and grant access again.",
     safeShortcutReady: "Safe shortcut ready",
     noAiTargetReady: "Ready - no AI target",
     lastPasteNone: "No paste recorded",
@@ -124,7 +129,11 @@ const copy = {
     granted: "✅ 已授权",
     missing: "❌ 未授权",
     restartPending: "重启后确认",
-    restartAfterPrivacy: "修改 macOS 权限后，请重启 BeforePaste 再确认。",
+    restartAfterPrivacy: "完成授权后，请退出并重新打开 BeforePaste；请以 Doctor 状态为准。",
+    resetPermissions: "重置 macOS 授权",
+    resetPermissionsConfirm: "这会清除 BeforePaste 在辅助功能、输入监控、粘贴事件和自动化中的授权记录。是否继续？",
+    resetPermissionsDone: "已清除 BeforePaste 的旧授权记录。请退出并重新打开 BeforePaste，然后点“打开”重新授权。",
+    resetPermissionsFailed: "重置授权失败",
     recommended: "推荐",
     web: "网页",
     webPending: "网页未适配",
@@ -148,7 +157,7 @@ const copy = {
     safeShortcutAttention: "安全粘贴快捷键异常",
     safeShortcutAttentionCopy: "这个快捷键可能被其他应用占用，请换一个快捷键。",
     needsAttention: "需要处理",
-    restartCopy: "请重启 BeforePaste，或关闭后重新打开 Cmd+V 保护。",
+    restartCopy: "请重启 BeforePaste。如果是更新 preview 版本后出现授权异常，请重置 macOS 授权并重新授权。",
     safeShortcutReady: "安全粘贴可用",
     noAiTargetReady: "已就绪，当前不是 AI 目标",
     lastPasteNone: "暂无粘贴记录",
@@ -255,10 +264,10 @@ function applyStaticCopy() {
     currentLang === "ZH" ? "BeforePaste 只会自动保护勾选的应用、网页和终端场景。" : "BeforePaste only protects the checked apps, websites, and terminal contexts.",
     currentLang === "ZH" ? "当前公开源码版未启用桌面端内置更新，请从 GitHub Releases 下载新版。" : "In-app desktop updates are not enabled in this public source release. Download new builds from GitHub Releases.",
     currentLang === "ZH" ? "检查粘贴模式、快捷键、目标识别和权限状态。" : "Checks the selected paste mode, shortcuts, target detection, and permissions.",
-    currentLang === "ZH" ? "修改 macOS 权限后，可能需要重启 BeforePaste 才能准确刷新。" : "Permission changes may require restarting BeforePaste before macOS reports them accurately.",
-    currentLang === "ZH" ? "用于执行最后一步粘贴。修改授权后请重启 BeforePaste 再确认。" : "Needed to perform paste actions. Restart BeforePaste after changing this permission.",
-    currentLang === "ZH" ? "用于自动保护 Cmd+V。修改授权后请重启 BeforePaste 再确认。" : "Needed for automatic Cmd+V protection. Restart BeforePaste after changing this permission.",
-    currentLang === "ZH" ? "用于识别浏览器标签页和终端上下文。修改授权后请重启 BeforePaste 再确认。" : "Needed to read browser tab and terminal context. Restart BeforePaste after changing this permission.",
+    currentLang === "ZH" ? "更新 preview 版本后，如授权状态异常，请删除旧授权并重新授权。" : "After a preview update, reset old macOS permission records if Doctor still reports missing access.",
+    currentLang === "ZH" ? "用于执行最后一步粘贴。系统设置里看到已授权，不代表当前这份 app 已被 macOS 接受；请以 Doctor 状态为准。" : "Needed to perform paste actions. System Settings may show BeforePaste as enabled even when this app build is not accepted; trust Doctor status.",
+    currentLang === "ZH" ? "用于自动保护 Cmd+V。如更新后状态异常，请重置 macOS 授权并重新授权。" : "Needed for automatic Cmd+V protection. If access looks wrong after updating, reset macOS permissions and grant access again.",
+    currentLang === "ZH" ? "用于识别浏览器标签页和终端上下文。如更新后状态异常，请重置 macOS 授权并重新授权。" : "Needed to read browser tab and terminal context. If access looks wrong after updating, reset macOS permissions and grant access again.",
     currentLang === "ZH" ? "只显示状态摘要，不会展示剪贴板内容。" : "Status summary only. Secret text is never shown here.",
     currentLang === "ZH" ? "默认跟随系统语言，也可以在这里手动切换。" : "Use the system language when available, or choose a language here.",
     currentLang === "ZH" ? "下次登录系统后自动打开 BeforePaste。" : "Start BeforePaste the next time you sign in.",
@@ -277,6 +286,20 @@ function applyStaticCopy() {
   });
   fields.installVscodeBridge.textContent = tr("installExtension");
   fields.doctorRefresh.textContent = currentLang === "ZH" ? "刷新状态" : "Refresh status";
+  fields.doctorResetPermissions.textContent = tr("resetPermissions");
+  setText("#doctor-reset-title", currentLang === "ZH" ? "Preview 版本授权重置" : "Preview build permission reset");
+  setText(
+    "#doctor-reset-copy",
+    currentLang === "ZH"
+      ? "更新 preview 版本后，如授权状态异常，请删除 BeforePaste 的旧授权记录并重新授权。"
+      : "If a newly downloaded preview build still appears unauthorized, remove the old macOS permission records and grant access again.",
+  );
+  setText(
+    "#doctor-reset-note",
+    currentLang === "ZH"
+      ? "系统设置里看到已授权，不代表当前这份 app 已被 macOS 接受；请以 Doctor 状态为准。"
+      : "System Settings can show BeforePaste as enabled even when macOS has not accepted this exact app build. Trust Doctor status.",
+  );
   for (const button of document.querySelectorAll("[data-open-privacy]")) {
     button.textContent = currentLang === "ZH" ? "打开" : "Open";
   }
@@ -388,8 +411,8 @@ function applyPlatformCopy(platform) {
       ? `在 ChatGPT、Claude、Gemini、Codex 等目标中按 ${label} 时，先脱敏再粘贴。`
       : "Redact before normal paste when an enabled AI app, site, or terminal is frontmost.";
     fields.inputMonitoringCopy.textContent = currentLang === "ZH"
-      ? `用于自动保护 ${label}。修改授权后请重启 BeforePaste 再确认。`
-      : `Needed for automatic ${label} protection. Restart BeforePaste after changing this permission.`;
+      ? `用于自动保护 ${label}。如更新 preview 版本后状态异常，请重置 macOS 授权并重新授权。`
+      : `Needed for automatic ${label} protection. If access looks wrong after updating, reset macOS permissions and grant access again.`;
   } else {
     fields.normalPasteCopy.textContent = currentLang === "ZH"
       ? "当前平台暂不支持自动保护普通粘贴，请使用安全粘贴快捷键。"
@@ -517,12 +540,12 @@ function renderDoctor(status) {
     const pending = ["accessibility", "input_monitoring"].some((key) => pendingPrivacyChecks.has(key));
     if (pending) {
       summaryCopy = currentLang === "ZH"
-        ? "已打开 macOS 授权页。完成授权后，请退出并重新打开 BeforePaste 再确认。"
-        : "macOS Privacy settings were opened. After granting access, quit and reopen BeforePaste to confirm.";
+        ? "已打开 macOS 授权页。完成授权后，请退出并重新打开 BeforePaste；请以 Doctor 状态为准。"
+        : "macOS Privacy settings were opened. After granting access, quit and reopen BeforePaste. Trust Doctor status.";
     } else if (missing.length) {
       summaryCopy = currentLang === "ZH"
-        ? `请在 macOS 隐私设置中开启${missing.join("和")}，然后重新打开 BeforePaste。`
-        : `Grant ${missing.join(" and ")} in macOS Privacy settings, then reopen BeforePaste.`;
+        ? `请在 macOS 隐私设置中开启${missing.join("和")}。如果更新 preview 版本后仍异常，请先重置 macOS 授权再重新授权。`
+        : `Grant ${missing.join(" and ")} in macOS Privacy settings. If this started after a preview update, reset macOS permissions first.`;
     } else {
       summaryCopy = tr("restartCopy");
     }
@@ -830,6 +853,25 @@ document.querySelector("#check-update").addEventListener("click", () => {
 fields.doctorRefresh.addEventListener("click", async () => {
   await refreshDoctor();
   setStatus(tr("statusRefreshed"));
+});
+
+fields.doctorResetPermissions.addEventListener("click", async () => {
+  if (!window.confirm(tr("resetPermissionsConfirm"))) {
+    return;
+  }
+  fields.doctorResetPermissions.disabled = true;
+  try {
+    await invoke("reset_macos_permissions");
+    pendingPrivacyChecks.add("accessibility");
+    pendingPrivacyChecks.add("input_monitoring");
+    pendingPrivacyChecks.add("automation");
+    await refreshDoctor();
+    setStatus(tr("resetPermissionsDone"));
+  } catch (error) {
+    setStatus(`${tr("resetPermissionsFailed")}: ${String(error)}`);
+  } finally {
+    fields.doctorResetPermissions.disabled = false;
+  }
 });
 
 fields.installVscodeBridge.addEventListener("click", async () => {

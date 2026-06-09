@@ -77,7 +77,31 @@ open /Applications/BeforePaste.app
 ```
 
 After changing Accessibility or Input Monitoring permissions, quit and reopen
-BeforePaste before checking Doctor again.
+BeforePaste before checking Doctor again. If a preview update shows permission
+problems even though System Settings still lists BeforePaste as enabled, remove
+the old macOS permission records and grant access again:
+
+```bash
+# 1. Quit BeforePaste
+osascript -e 'quit app "BeforePaste"'
+
+# 2. Reset BeforePaste macOS privacy records
+tccutil reset Accessibility com.beforewire.beforepaste
+tccutil reset ListenEvent com.beforewire.beforepaste
+tccutil reset PostEvent com.beforewire.beforepaste
+tccutil reset AppleEvents com.beforewire.beforepaste
+
+# 3. Reopen BeforePaste
+open /Applications/BeforePaste.app
+```
+
+If app-specific reset does not clear the stale records, remove BeforePaste
+manually in System Settings -> Privacy & Security:
+
+- Accessibility -> remove BeforePaste, then add it again.
+- Input Monitoring -> remove BeforePaste, then add it again.
+- Automation -> remove BeforePaste entries, then trigger the app detection flow
+  again.
 
 If you build locally, the desktop binary is written to:
 
@@ -157,6 +181,8 @@ inside the integrated terminal so VS Code can publish the active terminal state.
 
 Doctor shows permission status and runtime status separately. A permission can
 be granted while the selected paste mode is still off or needs attention.
+For preview builds, System Settings can show BeforePaste as enabled even when
+macOS has not accepted this exact app build. Trust the Doctor status.
 
 ## Paste Modes
 
@@ -189,6 +215,11 @@ BeforePaste uses macOS permissions only for local paste protection:
 | Accessibility | Performs the final protected paste action and reads limited UI context needed for target detection. |
 | Input Monitoring | Lets Advanced mode observe and intercept normal `Cmd+V`. |
 | Automation / App detection access | Reads browser tab URLs and terminal/app context for positive target detection. |
+
+Preview builds may need a permission reset after updating because macOS ties
+TCC permissions to the bundle identifier and the exact code-signing requirement.
+Open `Doctor` and use `Reset macOS permissions` if the new app build still
+appears unauthorized.
 
 ## Target Detection
 
