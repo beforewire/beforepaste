@@ -681,12 +681,13 @@ function renderSetupChecklist() {
     pendingPrivacyChecks.has(key)
   );
   const permissionsOk = accessibilityOk && inputMonitoringOk && !permissionsPending;
+  const safePermissionOk = !macos || status.permissions.accessibility;
   const cmdvOk = status.beforepaste_enabled
     && macos
     && status.protect_normal_paste
     && permissionsOk
     && status.normal_paste_event_tap_installed;
-  const safeOk = status.beforepaste_enabled && status.force_paste_hotkey_registered;
+  const safeOk = status.beforepaste_enabled && safePermissionOk && status.force_paste_hotkey_registered;
   const vscodeOk = Boolean(vscode?.installed);
 
   const [permissionsLabel, permissionsState] = permissionsPending
@@ -720,11 +721,13 @@ function renderSetupChecklist() {
   }
   setDiagnosticStatus(fields.setupCmdvStatus, cmdvLabel, cmdvState);
 
-  const [safeLabel, safeState] = setupLabel(
-    safeOk,
-    currentLang === "ZH" ? `${hotkey} 可用` : `${hotkey} ready`,
-    currentLang === "ZH" ? `${hotkey} 未注册` : `${hotkey} not registered`,
-  );
+  const [safeLabel, safeState] = !safePermissionOk
+    ? [currentLang === "ZH" ? "缺少权限：辅助功能" : "Missing Accessibility", "warn"]
+    : setupLabel(
+      safeOk,
+      currentLang === "ZH" ? `${hotkey} 可用` : `${hotkey} ready`,
+      currentLang === "ZH" ? `${hotkey} 未注册` : `${hotkey} not registered`,
+    );
   setDiagnosticStatus(fields.setupSafeStatus, safeLabel, safeState);
 
   let vscodeLabel = tr("checking");
@@ -823,9 +826,13 @@ function renderDoctor(status) {
 
   let forceLabel = formatHotkeyForDisplay(status.force_paste_hotkey) || tr("notSet");
   let forceState = "ok";
+  const safeMissingPermission = currentPlatform === "macos" && !status.permissions.accessibility;
   if (!status.beforepaste_enabled) {
     forceLabel = tr("disabled");
     forceState = "muted";
+  } else if (safeMissingPermission) {
+    forceLabel = currentLang === "ZH" ? "缺少权限：辅助功能" : "Missing Accessibility";
+    forceState = "warn";
   } else if (!status.force_paste_hotkey_registered) {
     forceLabel = `${forceLabel} ${tr("notRegistered")}`;
     forceState = "warn";
@@ -837,10 +844,23 @@ function renderDoctor(status) {
   let summaryTitle = tr("protectionReady");
   let summaryCopy = tr("protectionReadyCopy");
   let summaryState = "ok";
+  const missingRequiredPermissions = [];
+  if (currentPlatform === "macos" && !status.permissions.accessibility) {
+    missingRequiredPermissions.push(currentLang === "ZH" ? "辅助功能" : "Accessibility");
+  }
+  if (currentPlatform === "macos" && status.protect_normal_paste && !status.permissions.input_monitoring) {
+    missingRequiredPermissions.push(currentLang === "ZH" ? "输入监控" : "Input Monitoring");
+  }
   if (!status.beforepaste_enabled) {
     summaryTitle = tr("protectionOff");
     summaryCopy = tr("protectionOffCopy");
     summaryState = "muted";
+  } else if (missingRequiredPermissions.length) {
+    summaryTitle = currentLang === "ZH" ? "缺少 macOS 授权" : "macOS permissions needed";
+    summaryCopy = currentLang === "ZH"
+      ? `请先开启${missingRequiredPermissions.join("和")}。没有辅助功能时，安全粘贴也不能完成最后一步粘贴。`
+      : `Grant ${missingRequiredPermissions.join(" and ")} first. Safe Paste also needs Accessibility for the final paste action.`;
+    summaryState = "warn";
   } else if (forceState === "warn") {
     summaryTitle = tr("safeShortcutAttention");
     summaryCopy = tr("safeShortcutAttentionCopy");

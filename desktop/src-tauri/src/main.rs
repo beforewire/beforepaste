@@ -865,6 +865,26 @@ fn overall_status_label(status: &RuntimeStatus, cmdv: &str, safe: &str, lang: La
             "BeforePaste: Protection Off".to_string()
         };
     }
+    let ready = if lang == Lang::ZH { "就绪" } else { "Ready" };
+    if status.platform == "macos" && status.protect_normal_paste && cmdv != ready {
+        return if lang == Lang::ZH {
+            format!("BeforePaste：{cmdv}")
+        } else {
+            format!("BeforePaste: {cmdv}")
+        };
+    }
+    let safe_missing_permission = if lang == Lang::ZH {
+        safe.contains("缺少权限")
+    } else {
+        safe.contains("Missing")
+    };
+    if safe_missing_permission {
+        return if lang == Lang::ZH {
+            format!("BeforePaste：{safe}")
+        } else {
+            format!("BeforePaste: {safe}")
+        };
+    }
     let safe_needs_attention = if lang == Lang::ZH {
         safe.contains("未注册")
     } else {
@@ -875,14 +895,6 @@ fn overall_status_label(status: &RuntimeStatus, cmdv: &str, safe: &str, lang: La
             "BeforePaste：安全粘贴快捷键异常".to_string()
         } else {
             "BeforePaste: Safe Paste Needs Attention".to_string()
-        };
-    }
-    let ready = if lang == Lang::ZH { "就绪" } else { "Ready" };
-    if status.platform == "macos" && status.protect_normal_paste && cmdv != ready {
-        return if lang == Lang::ZH {
-            format!("BeforePaste：{cmdv}")
-        } else {
-            format!("BeforePaste: {cmdv}")
         };
     }
     if status.platform == "macos" && status.protect_normal_paste {
@@ -945,6 +957,14 @@ fn cmdv_status_label(status: &RuntimeStatus, lang: Lang) -> String {
 fn safe_paste_status_label(status: &RuntimeStatus, lang: Lang) -> String {
     if !status.beforepaste_enabled {
         return if lang == Lang::ZH { "未启用" } else { "Disabled" }.to_string();
+    }
+    if status.platform == "macos" && !status.permissions.accessibility {
+        return if lang == Lang::ZH {
+            "缺少权限：辅助功能"
+        } else {
+            "Missing Accessibility"
+        }
+        .to_string();
     }
     let hotkey = display_hotkey(&status.force_paste_hotkey);
     if status.force_paste_hotkey_registered {
@@ -1060,15 +1080,22 @@ fn request_accessibility_trust() -> bool {
 
 #[cfg(target_os = "macos")]
 fn request_input_monitoring_trust() -> bool {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGRequestListenEventAccess() -> bool;
+    }
     #[link(name = "IOKit", kind = "framework")]
     unsafe extern "C" {
         fn IOHIDRequestAccess(request_type: i32) -> bool;
     }
 
-    // kIOHIDRequestTypeListenEvent. This is the Input Monitoring permission
-    // shown in System Settings; using IOHID avoids treating Accessibility-only
-    // access as if explicit keyboard monitoring had been granted.
-    unsafe { IOHIDRequestAccess(1) }
+    // CGEventTap is the path BeforePaste uses for Cmd+V protection, so request
+    // CoreGraphics event-listening access first. Keep the IOHID request as a
+    // compatibility nudge for the same Input Monitoring privacy pane.
+    let cg_granted = unsafe { CGRequestListenEventAccess() };
+    // kIOHIDRequestTypeListenEvent.
+    let hid_granted = unsafe { IOHIDRequestAccess(1) };
+    cg_granted || hid_granted
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1093,13 +1120,12 @@ fn accessibility_trusted() -> bool {
 
 #[cfg(target_os = "macos")]
 fn input_monitoring_trusted() -> bool {
-    #[link(name = "IOKit", kind = "framework")]
+    #[link(name = "CoreGraphics", kind = "framework")]
     unsafe extern "C" {
-        fn IOHIDCheckAccess(request_type: i32) -> i32;
+        fn CGPreflightListenEventAccess() -> bool;
     }
 
-    // kIOHIDAccessTypeGranted == 0, kIOHIDRequestTypeListenEvent == 1.
-    unsafe { IOHIDCheckAccess(1) == 0 }
+    unsafe { CGPreflightListenEventAccess() }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1372,6 +1398,10 @@ fn start_paste_event_tap(state: Arc<AppState>) -> anyhow::Result<()> {
                 eprintln!(
                     "BeforePaste is waiting for macOS Accessibility permission; protected paste shortcuts will pass through until it is granted."
                 );
+            }
+            if !input_monitoring_trusted() {
+                let _ = request_input_monitoring_trust();
+                desktop_debug("event_tap requested input monitoring permission");
             }
             desktop_debug("event_tap thread starting");
 
@@ -1728,4 +1758,68 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running BeforePaste desktop");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn runtime_status(
+        permissions: PermissionStatus,
+        protect_normal_paste: bool,
+    ) -> RuntimeStatus {
+        RuntimeStatus {
+            platform: "macos".to_string(),
+            permissions,
+            beforepaste_enabled: true,
+            protect_normal_paste,
+            normal_paste_event_tap_started: false,
+            normal_paste_event_tap_installed: false,
+            force_paste_hotkey: "CommandOrControl+Option+V".to_string(),
+            force_paste_hotkey_registered: true,
+            current_target: None,
+            last_protected_paste: None,
+        }
+    }
+
+    #[test]
+    fn tray_safe_paste_requires_accessibility() {
+        let status = runtime_status(
+            PermissionStatus {
+                accessibility: false,
+                input_monitoring: false,
+                event_posting: false,
+                automation: false,
+            },
+            false,
+        );
+
+        let safe = safe_paste_status_label(&status, Lang::ZH);
+        assert_eq!(safe, "缺少权限：辅助功能");
+        assert_eq!(
+            overall_status_label(&status, "关闭", &safe, Lang::ZH),
+            "BeforePaste：缺少权限：辅助功能"
+        );
+    }
+
+    #[test]
+    fn tray_cmdv_reports_missing_input_permissions_first() {
+        let status = runtime_status(
+            PermissionStatus {
+                accessibility: false,
+                input_monitoring: false,
+                event_posting: false,
+                automation: false,
+            },
+            true,
+        );
+
+        let cmdv = cmdv_status_label(&status, Lang::ZH);
+        let safe = safe_paste_status_label(&status, Lang::ZH);
+        assert_eq!(cmdv, "缺少权限：辅助功能 + 输入监控");
+        assert_eq!(
+            overall_status_label(&status, &cmdv, &safe, Lang::ZH),
+            "BeforePaste：缺少权限：辅助功能 + 输入监控"
+        );
+    }
 }

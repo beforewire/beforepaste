@@ -239,7 +239,7 @@ BeforePaste uses macOS permissions only for local paste protection:
 | Permission | Used for |
 |---|---|
 | Accessibility | Performs the final protected paste action and reads limited UI context needed for target detection. |
-| Input Monitoring | Lets the running app observe and intercept normal `Cmd+V` for automatic protection. macOS must grant this through its system prompt; BeforePaste cannot add or approve itself automatically. |
+| Input Monitoring | Lets the running app observe and intercept normal `Cmd+V` for automatic protection. BeforePaste can request this permission so it appears in the macOS Input Monitoring flow, but macOS still requires the user to turn it on. |
 | Automation / App detection access | Reads browser tab URLs and terminal/app context for positive target detection. |
 
 Preview builds may need a permission reset after updating because macOS ties
