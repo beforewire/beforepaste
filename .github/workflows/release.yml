@@ -237,6 +237,16 @@ jobs:
         working-directory: desktop
         run: npm run tauri -- build --bundles ${{ matrix.bundles }}
 
+      - name: Verify macOS desktop signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app="desktop/src-tauri/target/release/bundle/macos/BeforePaste.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv --verbose=4 "$app" 2> codesign.txt
+          cat codesign.txt
+          grep -q 'Identifier=com.beforewire.beforepaste' codesign.txt
+
       - name: Stage Linux desktop artifacts
         if: runner.os == 'Linux'
         shell: bash
