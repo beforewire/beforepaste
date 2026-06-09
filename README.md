@@ -191,6 +191,8 @@ use the Safe Paste shortcut there if Doctor does not show a VS Code AI target.
 4. Keep `Advanced` mode on for normal `Cmd+V` protection in AI targets.
 5. Use `Safe Paste Shortcut Only` if you prefer an explicit protected shortcut.
 6. Install the VS Code extension if you paste into AI CLIs inside VS Code terminals.
+7. In `Doctor`, use `Try a protected paste` to copy a safe sample and verify
+   the Safe Paste shortcut locally before pasting real content into AI tools.
 
 Doctor shows permission status and runtime status separately. A permission can
 be granted while the selected paste mode is still off or needs attention.
@@ -227,7 +229,7 @@ BeforePaste uses macOS permissions only for local paste protection:
 | Permission | Used for |
 |---|---|
 | Accessibility | Performs the final protected paste action and reads limited UI context needed for target detection. |
-| Input Monitoring | Lets Advanced mode observe and intercept normal `Cmd+V`. |
+| Cmd+V interception capability | Shows whether the running app can observe and intercept normal `Cmd+V`. This may differ from whether System Settings visibly lists the current preview build under Input Monitoring. |
 | Automation / App detection access | Reads browser tab URLs and terminal/app context for positive target detection. |
 
 Preview builds may need a permission reset after updating because macOS ties

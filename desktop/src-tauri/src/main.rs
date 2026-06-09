@@ -127,9 +127,25 @@ struct AppState {
     tray_stats: Mutex<TrayStatsCache>,
 }
 
+const TEST_PAYLOAD: &str = r#"BeforePaste test sample
+model: demo-model
+base_url: https://example.invalid/v1
+api_key: sk-beforepaste-demo-123456
+export ALIYUN_ACCESS_KEY_SECRET=beforepasteDemoSecret
+"#;
+
 #[tauri::command]
 fn get_config() -> Config {
     Config::load()
+}
+
+#[tauri::command]
+fn copy_test_payload() -> Result<(), String> {
+    let mut clipboard = beforepaste::clipboard::ClipboardMonitor::new(0)
+        .map_err(|e| format!("clipboard unavailable: {e}"))?;
+    clipboard
+        .replace_text(TEST_PAYLOAD)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1441,6 +1457,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_config,
+            copy_test_payload,
             get_target_catalog,
             get_cli_target_catalog,
             get_permission_status,

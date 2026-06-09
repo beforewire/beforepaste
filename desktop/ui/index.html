@@ -68,7 +68,10 @@
                   <strong id="setup-permissions-title">macOS permissions</strong>
                   <small id="setup-permissions-copy">Accessibility and Input Monitoring are required for automatic Cmd+V protection.</small>
                 </span>
-                <span id="setup-permissions-status" class="bp-status-pill">Checking</span>
+                <div class="bp-inline-actions">
+                  <span id="setup-permissions-status" class="bp-status-pill">Checking</span>
+                  <button id="setup-open-permissions" class="bp-button bp-button-small" type="button">Open</button>
+                </div>
               </div>
               <div class="bp-setup-check">
                 <span>
@@ -303,6 +306,18 @@
                 <button id="doctor-install-vscode-bridge" class="bp-button bp-button-small" type="button" hidden>Install extension</button>
               </div>
             </div>
+          </div>
+
+          <div class="bp-settings-group bp-paste-test">
+            <div class="bp-paste-test-header">
+              <span>
+                <strong id="paste-test-title">Try a protected paste</strong>
+                <small id="paste-test-copy">Copy a safe sample, then use the Safe Paste shortcut in the box below to verify redaction.</small>
+              </span>
+              <button id="copy-test-payload" class="bp-button bp-button-small" type="button">Copy sample</button>
+            </div>
+            <textarea id="paste-test-output" class="bp-test-area" spellcheck="false" placeholder="Paste the protected sample here"></textarea>
+            <small id="paste-test-note" class="bp-test-note">Use Safe Paste here. Normal Cmd+V is only protected in detected AI targets.</small>
           </div>
 
           <div class="bp-settings-group bp-preview-permissions">

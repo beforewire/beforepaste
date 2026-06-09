@@ -10,6 +10,7 @@ const fields = {
   setupPermissionsTitle: document.querySelector("#setup-permissions-title"),
   setupPermissionsCopy: document.querySelector("#setup-permissions-copy"),
   setupPermissionsStatus: document.querySelector("#setup-permissions-status"),
+  setupOpenPermissions: document.querySelector("#setup-open-permissions"),
   setupCmdvTitle: document.querySelector("#setup-cmdv-title"),
   setupCmdvCopy: document.querySelector("#setup-cmdv-copy"),
   setupCmdvStatus: document.querySelector("#setup-cmdv-status"),
@@ -55,6 +56,11 @@ const fields = {
   doctorVscodeCopy: document.querySelector("#doctor-vscode-copy"),
   doctorVscodeBridge: document.querySelector("#doctor-vscode-bridge"),
   doctorInstallVscodeBridge: document.querySelector("#doctor-install-vscode-bridge"),
+  pasteTestTitle: document.querySelector("#paste-test-title"),
+  pasteTestCopy: document.querySelector("#paste-test-copy"),
+  pasteTestNote: document.querySelector("#paste-test-note"),
+  pasteTestOutput: document.querySelector("#paste-test-output"),
+  copyTestPayload: document.querySelector("#copy-test-payload"),
   vscodeBridgeStatus: document.querySelector("#vscode-bridge-status"),
   installVscodeBridge: document.querySelector("#install-vscode-bridge"),
 };
@@ -93,6 +99,11 @@ const copy = {
     installDone: "Extension installed",
     granted: "✅ Granted",
     missing: "❌ Not granted",
+    available: "✅ Available",
+    unavailable: "❌ Unavailable",
+    openSettings: "Open settings",
+    copySample: "Copy sample",
+    sampleCopied: "Sample copied. Click the test box and press the Safe Paste shortcut.",
     restartPending: "Restart to confirm",
     restartAfterPrivacy: "After granting access, quit and reopen BeforePaste. Trust Doctor status over System Settings labels.",
     resetPermissions: "Reset macOS permissions",
@@ -151,6 +162,11 @@ const copy = {
     installDone: "插件已安装",
     granted: "✅ 已授权",
     missing: "❌ 未授权",
+    available: "✅ 当前可用",
+    unavailable: "❌ 不可用",
+    openSettings: "打开设置",
+    copySample: "复制测试内容",
+    sampleCopied: "测试内容已复制。点击测试框，然后按安全粘贴快捷键。",
     restartPending: "重启后确认",
     restartAfterPrivacy: "完成授权后，请退出并重新打开 BeforePaste；请以 Doctor 状态为准。",
     resetPermissions: "重置 macOS 授权",
@@ -232,8 +248,9 @@ function applyStaticCopy() {
   fields.setupOpenDoctor.textContent = currentLang === "ZH" ? "打开诊断" : "Open Doctor";
   fields.setupPermissionsTitle.textContent = currentLang === "ZH" ? "macOS 授权" : "macOS permissions";
   fields.setupPermissionsCopy.textContent = currentLang === "ZH"
-    ? "安全粘贴需要辅助功能；自动保护 Cmd+V 还需要输入监控。授权后请退出并重新打开。"
-    : "Safe Paste needs Accessibility; automatic Cmd+V also needs Input Monitoring. Quit and reopen after granting access.";
+    ? "安全粘贴需要辅助功能；自动保护 Cmd+V 还需要键盘监听能力。授权后请退出并重新打开。"
+    : "Safe Paste needs Accessibility; automatic Cmd+V also needs keyboard-listening capability. Quit and reopen after granting access.";
+  fields.setupOpenPermissions.textContent = tr("openSettings");
   fields.setupCmdvTitle.textContent = currentLang === "ZH" ? "自动保护 Cmd+V" : "Automatic Cmd+V";
   fields.setupCmdvCopy.textContent = currentLang === "ZH"
     ? "只在识别到白名单里的 AI 应用、网页或终端时接管普通粘贴。"
@@ -252,6 +269,17 @@ function applyStaticCopy() {
     ? "如果你会粘贴到 VS Code 集成终端里的 Codex、Claude Code 或 Gemini CLI，请安装此插件。"
     : "Install this if you paste into Codex, Claude Code, or Gemini CLI inside VS Code integrated terminals.";
   fields.doctorInstallVscodeBridge.textContent = tr("installExtension");
+  fields.pasteTestTitle.textContent = currentLang === "ZH" ? "验证保护效果" : "Try a protected paste";
+  fields.pasteTestCopy.textContent = currentLang === "ZH"
+    ? "复制一段安全的测试内容，然后在下面的框里按安全粘贴快捷键，确认看到脱敏后的占位符。"
+    : "Copy a safe sample, then press the Safe Paste shortcut in the box below to confirm redaction.";
+  fields.copyTestPayload.textContent = tr("copySample");
+  fields.pasteTestOutput.placeholder = currentLang === "ZH"
+    ? "点击“复制测试内容”，再在这里按安全粘贴快捷键"
+    : "Click Copy sample, then press the Safe Paste shortcut here";
+  fields.pasteTestNote.textContent = currentLang === "ZH"
+    ? "在这个测试框里请使用安全粘贴快捷键；普通 Cmd+V 只会在识别到 AI 目标时自动保护。"
+    : "Use Safe Paste in this test box. Normal Cmd+V is only protected in detected AI targets.";
 
   const panelNames = ["paste", "redaction", "targets", "doctor", "updates", "advanced"];
   for (const panel of panelNames) {
@@ -292,7 +320,7 @@ function applyStaticCopy() {
     currentLang === "ZH" ? "正在检查" : "Checking protection",
     currentLang === "ZH" ? "权限状态" : "Permission checks",
     currentLang === "ZH" ? "辅助功能" : "Accessibility",
-    currentLang === "ZH" ? "输入监控" : "Input Monitoring",
+    currentLang === "ZH" ? "Cmd+V 接管能力" : "Cmd+V interception capability",
     currentLang === "ZH" ? "应用识别" : "App detection capability",
     currentLang === "ZH" ? "上次保护记录" : "Last protected paste",
     currentLang === "ZH" ? "语言" : "Language",
@@ -316,7 +344,7 @@ function applyStaticCopy() {
     currentLang === "ZH" ? "检查粘贴模式、快捷键、目标识别和权限状态。" : "Checks the selected paste mode, shortcuts, target detection, and permissions.",
     currentLang === "ZH" ? "更新 preview 版本后，如授权状态异常，请删除旧授权并重新授权。" : "After a preview update, reset old macOS permission records if Doctor still reports missing access.",
     currentLang === "ZH" ? "用于执行最后一步粘贴。系统设置里看到已授权，不代表当前这份 app 已被 macOS 接受；请以 Doctor 状态为准。" : "Needed to perform paste actions. System Settings may show BeforePaste as enabled even when this app build is not accepted; trust Doctor status.",
-    currentLang === "ZH" ? "用于自动保护 Cmd+V。如更新后状态异常，请重置 macOS 授权并重新授权。" : "Needed for automatic Cmd+V protection. If access looks wrong after updating, reset macOS permissions and grant access again.",
+    currentLang === "ZH" ? "表示当前进程能否接管普通 Cmd+V；不等同于系统设置列表里一定能看到 BeforePaste。" : "Shows whether this running app can intercept normal Cmd+V. It may differ from the visible System Settings list.",
     currentLang === "ZH" ? "用于识别浏览器标签页和终端上下文。如更新后状态异常，请重置 macOS 授权并重新授权。" : "Needed to read browser tab and terminal context. If access looks wrong after updating, reset macOS permissions and grant access again.",
     currentLang === "ZH" ? "只显示状态摘要，不会展示剪贴板内容。" : "Status summary only. Secret text is never shown here.",
     currentLang === "ZH" ? "默认跟随系统语言，也可以在这里手动切换。" : "Use the system language when available, or choose a language here.",
@@ -461,8 +489,8 @@ function applyPlatformCopy(platform) {
       ? `在 ChatGPT、Claude、Gemini、Codex 等目标中按 ${label} 时，先脱敏再粘贴。`
       : "Redact before normal paste when an enabled AI app, site, or terminal is frontmost.";
     fields.inputMonitoringCopy.textContent = currentLang === "ZH"
-      ? `用于自动保护 ${label}。如更新 preview 版本后状态异常，请重置 macOS 授权并重新授权。`
-      : `Needed for automatic ${label} protection. If access looks wrong after updating, reset macOS permissions and grant access again.`;
+      ? `表示当前进程能否接管普通 ${label}；不等同于系统设置列表里一定能看到 BeforePaste。`
+      : `Shows whether this running app can intercept normal ${label}. It may differ from the visible System Settings list.`;
   } else {
     fields.normalPasteCopy.textContent = currentLang === "ZH"
       ? "当前平台暂不支持自动保护普通粘贴，请使用安全粘贴快捷键。"
@@ -517,8 +545,24 @@ function permissionLabel(value, key) {
   return [tr("missing"), "warn"];
 }
 
+function capabilityLabel(value, key) {
+  if (value) {
+    if (key) pendingPrivacyChecks.delete(key);
+    return [tr("available"), "ok"];
+  }
+  if (key && pendingPrivacyChecks.has(key)) {
+    return [tr("restartPending"), "warn"];
+  }
+  return [tr("unavailable"), "warn"];
+}
+
 function renderPermission(element, value, key) {
   const [label, state] = permissionLabel(value, key);
+  setDiagnosticStatus(element, label, state);
+}
+
+function renderCapability(element, value, key) {
+  const [label, state] = capabilityLabel(value, key);
   setDiagnosticStatus(element, label, state);
 }
 
@@ -547,10 +591,13 @@ function renderSetupChecklist() {
 
   const [permissionsLabel, permissionsState] = setupLabel(
     permissionsOk,
-    tr("granted"),
-    currentLang === "ZH" ? "需要授权" : "Needs access",
+    tr("available"),
+    currentLang === "ZH" ? "需要处理" : "Needs setup",
   );
   setDiagnosticStatus(fields.setupPermissionsStatus, permissionsLabel, permissionsState);
+  fields.setupOpenPermissions.textContent = permissionsOk
+    ? (currentLang === "ZH" ? "查看诊断" : "Doctor")
+    : tr("openSettings");
 
   let cmdvLabel = currentLang === "ZH" ? "可用" : "Ready";
   let cmdvState = "ok";
@@ -635,7 +682,7 @@ function renderDoctor(status) {
   currentPlatform = status.platform || currentPlatform;
   applyPlatformCopy(currentPlatform);
   renderPermission(fields.doctorAccessibility, status.permissions.accessibility, "accessibility");
-  renderPermission(fields.doctorInputMonitoring, status.permissions.input_monitoring, "input_monitoring");
+  renderCapability(fields.doctorInputMonitoring, status.permissions.input_monitoring, "input_monitoring");
   renderPermission(fields.doctorAutomation, status.permissions.automation, "automation");
 
   setDiagnosticStatus(
@@ -695,7 +742,7 @@ function renderDoctor(status) {
     summaryTitle = `${normalPasteLabel(currentPlatform)} ${tr("needsAttention")}`;
     const missing = [];
     if (!status.permissions.accessibility) missing.push(currentLang === "ZH" ? "辅助功能" : "Accessibility");
-    if (!status.permissions.input_monitoring) missing.push(currentLang === "ZH" ? "输入监控" : "Input Monitoring");
+    if (!status.permissions.input_monitoring) missing.push(currentLang === "ZH" ? "Cmd+V 接管能力" : "Cmd+V interception capability");
     const pending = ["accessibility", "input_monitoring"].some((key) => pendingPrivacyChecks.has(key));
     if (pending) {
       summaryCopy = currentLang === "ZH"
@@ -1036,6 +1083,35 @@ fields.setupOpenDoctor.addEventListener("click", () => {
   activatePanel("doctor");
 });
 
+async function openPrivacyKind(privacyKind) {
+  try {
+    pendingPrivacyChecks.add(privacyKind);
+    await invoke("open_privacy_settings", { kind: privacyKind });
+    await refreshDoctor();
+    setStatus(tr("restartAfterPrivacy"));
+  } catch (error) {
+    pendingPrivacyChecks.delete(privacyKind);
+    setStatus(String(error));
+  }
+}
+
+fields.setupOpenPermissions.addEventListener("click", async () => {
+  const status = lastRuntimeStatus;
+  if (!status || status.platform !== "macos") {
+    activatePanel("doctor");
+    return;
+  }
+  if (!status.permissions.accessibility) {
+    await openPrivacyKind("accessibility");
+    return;
+  }
+  if (status.protect_normal_paste && !status.permissions.input_monitoring) {
+    await openPrivacyKind("input_monitoring");
+    return;
+  }
+  activatePanel("doctor");
+});
+
 fields.doctorResetPermissions.addEventListener("click", async () => {
   if (!window.confirm(tr("resetPermissionsConfirm"))) {
     return;
@@ -1080,18 +1156,23 @@ fields.doctorInstallVscodeBridge.addEventListener("click", async () => {
   await installVscodeBridgeFromUi(fields.doctorInstallVscodeBridge);
 });
 
+fields.copyTestPayload.addEventListener("click", async () => {
+  fields.copyTestPayload.disabled = true;
+  try {
+    await invoke("copy_test_payload");
+    fields.pasteTestOutput.value = "";
+    fields.pasteTestOutput.focus();
+    setStatus(tr("sampleCopied"));
+  } catch (error) {
+    setStatus(String(error));
+  } finally {
+    fields.copyTestPayload.disabled = false;
+  }
+});
+
 for (const button of document.querySelectorAll("[data-open-privacy]")) {
   button.addEventListener("click", async () => {
-    const privacyKind = button.dataset.openPrivacy;
-    try {
-      pendingPrivacyChecks.add(privacyKind);
-      await invoke("open_privacy_settings", { kind: privacyKind });
-      await refreshDoctor();
-      setStatus(tr("restartAfterPrivacy"));
-    } catch (error) {
-      pendingPrivacyChecks.delete(privacyKind);
-      setStatus(String(error));
-    }
+    await openPrivacyKind(button.dataset.openPrivacy);
   });
 }
 
