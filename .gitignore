@@ -2,12 +2,15 @@ node_modules/
 vscode-extension/out/
 vscode-extension/.vscode-test/
 vscode-extension/*.vsix
+vscode-extension/dist/*.vsix
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
 .wrangler/
 .env
 .dev.vars
 dist/
+!vscode-extension/dist/
+!vscode-extension/dist/.gitkeep
 *.gen.js
 /target
 *.log

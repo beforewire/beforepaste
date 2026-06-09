@@ -1,16 +1,17 @@
 {
   "name": "@beforewire/beforepaste-desktop",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build",
+    "prepare:vscode-extension": "npm --prefix ../vscode-extension ci && npm --prefix ../vscode-extension run compile && mkdir -p ../vscode-extension/dist && npm --prefix ../vscode-extension run package -- --out dist/beforepaste-vscode.vsix",
+    "build": "npm run prepare:vscode-extension && tauri build",
     "build:no-bundle": "tauri build --no-bundle",
-    "build:linux": "tauri build --bundles deb,rpm,appimage",
-    "build:windows": "tauri build --bundles nsis,msi",
-    "build:macos": "tauri build --bundles app,dmg",
+    "build:linux": "npm run prepare:vscode-extension && tauri build --bundles deb,rpm,appimage",
+    "build:windows": "npm run prepare:vscode-extension && tauri build --bundles nsis,msi",
+    "build:macos": "npm run prepare:vscode-extension && tauri build --bundles app,dmg",
     "icons": "tauri icon src-tauri/icons/icon.png"
   },
   "devDependencies": {

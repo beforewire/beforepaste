@@ -148,13 +148,13 @@ fn get_permission_status() -> PermissionStatus {
 }
 
 #[tauri::command]
-fn get_vscode_bridge_status() -> VscodeBridgeStatus {
-    vscode_bridge_status()
+fn get_vscode_bridge_status(app: tauri::AppHandle) -> VscodeBridgeStatus {
+    vscode_bridge_status(Some(&app))
 }
 
 #[tauri::command]
-fn install_vscode_bridge() -> Result<VscodeBridgeStatus, String> {
-    let status = vscode_bridge_status();
+fn install_vscode_bridge(app: tauri::AppHandle) -> Result<VscodeBridgeStatus, String> {
+    let status = vscode_bridge_status(Some(&app));
     let Some(vsix) = status.vsix_path.as_deref() else {
         return Err("BeforePaste VS Code extension package was not found.".to_string());
     };
@@ -175,7 +175,7 @@ fn install_vscode_bridge() -> Result<VscodeBridgeStatus, String> {
             stderr
         });
     }
-    Ok(vscode_bridge_status())
+    Ok(vscode_bridge_status(Some(&app)))
 }
 
 #[tauri::command]
@@ -513,7 +513,7 @@ fn tray_text(lang: Lang, key: &str) -> &'static str {
 
 fn build_tray(app: &tauri::App, state: &Arc<AppState>) -> tauri::Result<()> {
     let lang = Config::load().lang;
-    let status = MenuItem::with_id(app, "status", tray_text(lang, "status_checking"), false, None::<&str>)?;
+    let status = MenuItem::with_id(app, "status", tray_text(lang, "status_checking"), true, None::<&str>)?;
     let target = MenuItem::with_id(
         app,
         "target",
@@ -589,6 +589,7 @@ fn build_tray(app: &tauri::App, state: &Arc<AppState>) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .on_menu_event(
             |app, event: tauri::menu::MenuEvent| match event.id().as_ref() {
+                "status" => schedule_preferences_panel(app.clone(), "doctor"),
                 "open_preferences" => schedule_preferences_panel(app.clone(), "paste"),
                 "open_doctor" => schedule_preferences_panel(app.clone(), "doctor"),
                 "mode_advanced" => {
@@ -961,9 +962,9 @@ fn permission_status() -> PermissionStatus {
     }
 }
 
-fn vscode_bridge_status() -> VscodeBridgeStatus {
+fn vscode_bridge_status(app: Option<&tauri::AppHandle>) -> VscodeBridgeStatus {
     let installed = vscode_extension_installed();
-    let vsix_path = local_vscode_vsix().map(|path| path.display().to_string());
+    let vsix_path = local_vscode_vsix(app).map(|path| path.display().to_string());
     let install_command = vsix_path
         .as_deref()
         .map(|path| format!("code --install-extension {path} --force"))
@@ -1007,22 +1008,53 @@ fn vscode_extension_installed() -> bool {
     })
 }
 
-fn local_vscode_vsix() -> Option<PathBuf> {
+fn local_vscode_vsix(app: Option<&tauri::AppHandle>) -> Option<PathBuf> {
+    if let Some(resource_dir) = app.and_then(|app| app.path().resource_dir().ok()) {
+        if let Some(path) = find_vsix_in_dir(resource_dir.join("vscode-extension")) {
+            return Some(path);
+        }
+    }
+
     let exe = std::env::current_exe().ok();
-    let candidates = [
-        std::env::current_dir()
-            .ok()
-            .map(|cwd| cwd.join("vscode-extension/beforepaste-0.1.0.vsix")),
-        exe.as_ref().and_then(|path| {
-            path.ancestors()
-                .nth(5)
-                .map(|root| root.join("vscode-extension/beforepaste-0.1.0.vsix"))
-        }),
-    ];
-    candidates
-        .into_iter()
+    let mut dirs = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        dirs.push(cwd.join("vscode-extension"));
+        dirs.push(cwd.join("vscode-extension/dist"));
+        dirs.push(cwd.join("../vscode-extension"));
+        dirs.push(cwd.join("../vscode-extension/dist"));
+        dirs.push(cwd.join("../../vscode-extension"));
+        dirs.push(cwd.join("../../vscode-extension/dist"));
+    }
+    if let Some(exe) = exe.as_ref() {
+        for ancestor in exe.ancestors().take(8) {
+            dirs.push(ancestor.join("vscode-extension"));
+            dirs.push(ancestor.join("vscode-extension/dist"));
+        }
+    }
+    dirs.into_iter().find_map(find_vsix_in_dir)
+}
+
+fn find_vsix_in_dir(dir: PathBuf) -> Option<PathBuf> {
+    let stable = dir.join("beforepaste-vscode.vsix");
+    if stable.exists() {
+        return Some(stable);
+    }
+    let versioned = dir.join("beforepaste-0.1.0.vsix");
+    if versioned.exists() {
+        return Some(versioned);
+    }
+    fs::read_dir(dir)
+        .ok()?
         .flatten()
-        .find(|path| path.exists())
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.extension().and_then(|ext| ext.to_str()) == Some("vsix")
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.starts_with("beforepaste"))
+                    .unwrap_or(false)
+        })
 }
 
 fn find_code_cli() -> Option<PathBuf> {
@@ -1472,6 +1504,14 @@ fn main() {
             build_tray(app, &state)?;
             update_tray_status(&app.handle().clone(), &state);
             start_target_monitor(app.handle().clone(), Arc::clone(&state));
+            if !config.onboarding_done {
+                schedule_preferences_panel(app.handle().clone(), "paste");
+                let mut next = config.clone();
+                next.onboarding_done = true;
+                if let Err(error) = next.save() {
+                    eprintln!("BeforePaste failed to mark onboarding as shown: {error}");
+                }
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

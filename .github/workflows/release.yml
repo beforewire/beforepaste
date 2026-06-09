@@ -135,6 +135,44 @@ jobs:
           name: ${{ matrix.asset }}
           path: dist/${{ matrix.asset }}
 
+  vscode-extension:
+    needs: create-release
+    name: beforepaste-vscode.vsix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vscode-extension/package-lock.json
+
+      - name: Install VS Code extension dependencies
+        working-directory: vscode-extension
+        run: npm ci
+
+      - name: Package VS Code extension
+        working-directory: vscode-extension
+        run: |
+          npm run compile
+          mkdir -p dist
+          npm run package -- --out dist/beforepaste-vscode.vsix
+
+      - name: Upload VS Code extension to release
+        if: env.DRY_RUN != 'true'
+        run: gh release upload "$RELEASE_TAG" "vscode-extension/dist/beforepaste-vscode.vsix" --clobber
+
+      - name: Upload dry-run VS Code extension artifact
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: beforepaste-vscode.vsix
+          path: vscode-extension/dist/beforepaste-vscode.vsix
+
   desktop-build:
     needs: create-release
     name: desktop-${{ matrix.platform }}
@@ -176,7 +214,20 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: |
+            desktop/package-lock.json
+            vscode-extension/package-lock.json
+
+      - name: Install VS Code extension dependencies
+        working-directory: vscode-extension
+        run: npm ci
+
+      - name: Package VS Code extension resource
+        working-directory: vscode-extension
+        run: |
+          npm run compile
+          mkdir -p dist
+          npm run package -- --out dist/beforepaste-vscode.vsix
 
       - name: Install desktop dependencies
         working-directory: desktop
@@ -259,7 +310,7 @@ jobs:
           path: dist/beforepaste-desktop-*
 
   checksums:
-    needs: [build, desktop-build]
+    needs: [build, desktop-build, vscode-extension]
     name: Publish SHA256SUMS
     if: github.event_name != 'workflow_dispatch' || inputs.dry_run == false
     runs-on: ubuntu-latest

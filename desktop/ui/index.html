@@ -54,6 +54,49 @@
 
         <section class="bp-panel is-active" data-panel-content="paste">
           <input id="protect-normal-paste" type="checkbox" hidden />
+          <div id="setup-card" class="bp-settings-group bp-setup-card">
+            <div class="bp-setup-header">
+              <span>
+                <strong id="setup-title">Finish setup to protect paste</strong>
+                <small id="setup-copy">BeforePaste needs macOS permissions and a working shortcut before it can protect normal paste.</small>
+              </span>
+              <button id="setup-open-doctor" class="bp-button bp-button-small" type="button">Open Doctor</button>
+            </div>
+            <div class="bp-setup-checks" aria-label="Setup checklist">
+              <div class="bp-setup-check">
+                <span>
+                  <strong id="setup-permissions-title">macOS permissions</strong>
+                  <small id="setup-permissions-copy">Accessibility and Input Monitoring are required for automatic Cmd+V protection.</small>
+                </span>
+                <span id="setup-permissions-status" class="bp-status-pill">Checking</span>
+              </div>
+              <div class="bp-setup-check">
+                <span>
+                  <strong id="setup-cmdv-title">Automatic Cmd+V</strong>
+                  <small id="setup-cmdv-copy">Protects normal paste only when an enabled AI target is detected.</small>
+                </span>
+                <span id="setup-cmdv-status" class="bp-status-pill">Checking</span>
+              </div>
+              <div class="bp-setup-check">
+                <span>
+                  <strong id="setup-safe-title">Safe paste shortcut</strong>
+                  <small id="setup-safe-copy">Use this shortcut when target detection is unavailable or uncertain.</small>
+                </span>
+                <span id="setup-safe-status" class="bp-status-pill">Checking</span>
+              </div>
+              <div class="bp-setup-check">
+                <span>
+                  <strong id="setup-vscode-title">VS Code extension</strong>
+                  <small id="setup-vscode-copy">Required for VS Code integrated terminal detection.</small>
+                </span>
+                <div class="bp-inline-actions">
+                  <span id="setup-vscode-status" class="bp-status-pill">Checking</span>
+                  <button id="setup-install-vscode-bridge" class="bp-button bp-button-small" type="button" hidden>Install extension</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="bp-settings-group">
             <label class="bp-setting-row">
               <span>
@@ -245,6 +288,19 @@
               <div class="bp-inline-actions">
                 <span id="doctor-automation" class="bp-diagnostic-value">-</span>
                 <button class="bp-button bp-button-small" data-open-privacy="automation" type="button">Open</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="bp-settings-group bp-doctor-bridge">
+            <div class="bp-doctor-bridge-row">
+              <span>
+                <strong id="doctor-vscode-title">VS Code extension</strong>
+                <small id="doctor-vscode-copy">Install this if you paste into AI CLIs inside VS Code integrated terminals.</small>
+              </span>
+              <div class="bp-inline-actions">
+                <span id="doctor-vscode-bridge" class="bp-diagnostic-value">-</span>
+                <button id="doctor-install-vscode-bridge" class="bp-button bp-button-small" type="button" hidden>Install extension</button>
               </div>
             </div>
           </div>

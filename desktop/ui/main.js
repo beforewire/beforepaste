@@ -3,6 +3,23 @@ const tauriEvent = window.__TAURI__.event;
 
 const fields = {
   language: document.querySelector("#language"),
+  setupCard: document.querySelector("#setup-card"),
+  setupTitle: document.querySelector("#setup-title"),
+  setupCopy: document.querySelector("#setup-copy"),
+  setupOpenDoctor: document.querySelector("#setup-open-doctor"),
+  setupPermissionsTitle: document.querySelector("#setup-permissions-title"),
+  setupPermissionsCopy: document.querySelector("#setup-permissions-copy"),
+  setupPermissionsStatus: document.querySelector("#setup-permissions-status"),
+  setupCmdvTitle: document.querySelector("#setup-cmdv-title"),
+  setupCmdvCopy: document.querySelector("#setup-cmdv-copy"),
+  setupCmdvStatus: document.querySelector("#setup-cmdv-status"),
+  setupSafeTitle: document.querySelector("#setup-safe-title"),
+  setupSafeCopy: document.querySelector("#setup-safe-copy"),
+  setupSafeStatus: document.querySelector("#setup-safe-status"),
+  setupVscodeTitle: document.querySelector("#setup-vscode-title"),
+  setupVscodeCopy: document.querySelector("#setup-vscode-copy"),
+  setupVscodeStatus: document.querySelector("#setup-vscode-status"),
+  setupInstallVscodeBridge: document.querySelector("#setup-install-vscode-bridge"),
   beforepasteEnabled: document.querySelector("#beforepaste-enabled"),
   modeAdvanced: document.querySelector("#mode-advanced"),
   modeSafeOnly: document.querySelector("#mode-safe-only"),
@@ -34,6 +51,10 @@ const fields = {
   doctorAutomation: document.querySelector("#doctor-automation"),
   doctorResetPermissions: document.querySelector("#doctor-reset-permissions"),
   doctorLastPaste: document.querySelector("#doctor-last-paste"),
+  doctorVscodeTitle: document.querySelector("#doctor-vscode-title"),
+  doctorVscodeCopy: document.querySelector("#doctor-vscode-copy"),
+  doctorVscodeBridge: document.querySelector("#doctor-vscode-bridge"),
+  doctorInstallVscodeBridge: document.querySelector("#doctor-install-vscode-bridge"),
   vscodeBridgeStatus: document.querySelector("#vscode-bridge-status"),
   installVscodeBridge: document.querySelector("#install-vscode-bridge"),
 };
@@ -44,6 +65,8 @@ let saveTimer;
 let targetCatalog = [];
 let cliTargetCatalog = [];
 let currentLang = "EN";
+let lastRuntimeStatus;
+let lastVscodeBridgeStatus;
 const pendingPrivacyChecks = new Set();
 const lastPanelKey = "beforepaste:last-panel";
 
@@ -202,6 +225,33 @@ function applyStaticCopy() {
   document.documentElement.lang = currentLang === "ZH" ? "zh-CN" : "en";
   document.title = currentLang === "ZH" ? "BeforePaste 设置" : "BeforePaste Preferences";
   setText(".bp-app-title span", currentLang === "ZH" ? "设置" : "Preferences");
+  fields.setupTitle.textContent = currentLang === "ZH" ? "完成设置后，粘贴保护才会生效" : "Finish setup to protect paste";
+  fields.setupCopy.textContent = currentLang === "ZH"
+    ? "BeforePaste 需要 macOS 授权、可用快捷键和 VS Code 插件状态都清楚，避免安装后实际没有保护。"
+    : "BeforePaste needs macOS permissions, a working shortcut, and clear VS Code bridge status so it actually protects paste.";
+  fields.setupOpenDoctor.textContent = currentLang === "ZH" ? "打开诊断" : "Open Doctor";
+  fields.setupPermissionsTitle.textContent = currentLang === "ZH" ? "macOS 授权" : "macOS permissions";
+  fields.setupPermissionsCopy.textContent = currentLang === "ZH"
+    ? "安全粘贴需要辅助功能；自动保护 Cmd+V 还需要输入监控。授权后请退出并重新打开。"
+    : "Safe Paste needs Accessibility; automatic Cmd+V also needs Input Monitoring. Quit and reopen after granting access.";
+  fields.setupCmdvTitle.textContent = currentLang === "ZH" ? "自动保护 Cmd+V" : "Automatic Cmd+V";
+  fields.setupCmdvCopy.textContent = currentLang === "ZH"
+    ? "只在识别到白名单里的 AI 应用、网页或终端时接管普通粘贴。"
+    : "Protects normal paste only when an enabled AI app, website, or terminal is detected.";
+  fields.setupSafeTitle.textContent = currentLang === "ZH" ? "安全粘贴快捷键" : "Safe paste shortcut";
+  fields.setupSafeCopy.textContent = currentLang === "ZH"
+    ? "目标识别不确定时使用它；无论当前应用是什么，都会粘贴脱敏后的内容。"
+    : "Use this when target detection is unavailable or uncertain; it always pastes a redacted copy.";
+  fields.setupVscodeTitle.textContent = currentLang === "ZH" ? "VS Code 插件" : "VS Code extension";
+  fields.setupVscodeCopy.textContent = currentLang === "ZH"
+    ? "用于识别 VS Code 集成终端中的 Codex、Claude Code、Gemini CLI；插件侧边栏/Chat 面板建议使用安全粘贴快捷键。"
+    : "Required for Codex, Claude Code, and Gemini CLI in VS Code integrated terminals. Use Safe Paste for extension sidebars or chat panels.";
+  fields.setupInstallVscodeBridge.textContent = tr("installExtension");
+  fields.doctorVscodeTitle.textContent = currentLang === "ZH" ? "VS Code 插件" : "VS Code extension";
+  fields.doctorVscodeCopy.textContent = currentLang === "ZH"
+    ? "如果你会粘贴到 VS Code 集成终端里的 Codex、Claude Code 或 Gemini CLI，请安装此插件。"
+    : "Install this if you paste into Codex, Claude Code, or Gemini CLI inside VS Code integrated terminals.";
+  fields.doctorInstallVscodeBridge.textContent = tr("installExtension");
 
   const panelNames = ["paste", "redaction", "targets", "doctor", "updates", "advanced"];
   for (const panel of panelNames) {
@@ -472,7 +522,116 @@ function renderPermission(element, value, key) {
   setDiagnosticStatus(element, label, state);
 }
 
+function setupLabel(ok, readyText = tr("ready"), missingText = tr("needsAttention")) {
+  return [ok ? readyText : missingText, ok ? "ok" : "warn"];
+}
+
+function renderSetupChecklist() {
+  if (!lastRuntimeStatus) return;
+  const status = lastRuntimeStatus;
+  const vscode = lastVscodeBridgeStatus;
+  const hotkey = formatHotkeyForDisplay(status.force_paste_hotkey) || tr("notSet");
+  const macos = status.platform === "macos";
+  const accessibilityOk = !macos || status.permissions.accessibility;
+  const inputMonitoringOk = !macos
+    || !status.protect_normal_paste
+    || status.permissions.input_monitoring;
+  const permissionsOk = accessibilityOk && inputMonitoringOk;
+  const cmdvOk = status.beforepaste_enabled
+    && macos
+    && status.protect_normal_paste
+    && permissionsOk
+    && status.normal_paste_event_tap_installed;
+  const safeOk = status.beforepaste_enabled && status.force_paste_hotkey_registered;
+  const vscodeOk = Boolean(vscode?.installed);
+
+  const [permissionsLabel, permissionsState] = setupLabel(
+    permissionsOk,
+    tr("granted"),
+    currentLang === "ZH" ? "需要授权" : "Needs access",
+  );
+  setDiagnosticStatus(fields.setupPermissionsStatus, permissionsLabel, permissionsState);
+
+  let cmdvLabel = currentLang === "ZH" ? "可用" : "Ready";
+  let cmdvState = "ok";
+  if (!status.beforepaste_enabled) {
+    cmdvLabel = tr("disabled");
+    cmdvState = "muted";
+  } else if (!macos) {
+    cmdvLabel = tr("notSupported");
+    cmdvState = "muted";
+  } else if (!status.protect_normal_paste) {
+    cmdvLabel = tr("off");
+    cmdvState = "warn";
+  } else if (!permissionsOk || !status.normal_paste_event_tap_installed) {
+    cmdvLabel = currentLang === "ZH" ? "需要处理" : "Needs setup";
+    cmdvState = "warn";
+  }
+  setDiagnosticStatus(fields.setupCmdvStatus, cmdvLabel, cmdvState);
+
+  const [safeLabel, safeState] = setupLabel(
+    safeOk,
+    currentLang === "ZH" ? `${hotkey} 可用` : `${hotkey} ready`,
+    currentLang === "ZH" ? `${hotkey} 未注册` : `${hotkey} not registered`,
+  );
+  setDiagnosticStatus(fields.setupSafeStatus, safeLabel, safeState);
+
+  let vscodeLabel = tr("checking");
+  let vscodeState = "muted";
+  if (vscode) {
+    vscodeLabel = vscode.installed
+      ? tr("installed")
+      : (currentLang === "ZH" ? "建议安装" : "Recommended");
+    vscodeState = vscode.installed ? "ok" : "warn";
+    fields.setupInstallVscodeBridge.hidden = vscode.installed || !vscode.vsix_path;
+    fields.setupInstallVscodeBridge.title = vscode.installed
+      ? (vscode.message || "")
+      : (vscode.install_command || vscode.message || "");
+  } else {
+    fields.setupInstallVscodeBridge.hidden = true;
+  }
+  setDiagnosticStatus(fields.setupVscodeStatus, vscodeLabel, vscodeState);
+
+  const blocking = !status.beforepaste_enabled
+    || !permissionsOk
+    || (status.protect_normal_paste && !cmdvOk)
+    || !safeOk;
+  fields.setupCard.classList.toggle("is-ok", !blocking);
+  fields.setupCard.classList.toggle("is-warn", blocking);
+  if (blocking) {
+    fields.setupTitle.textContent = currentLang === "ZH"
+      ? "还差几步，BeforePaste 才能开始保护"
+      : "BeforePaste still needs setup";
+    fields.setupCopy.textContent = currentLang === "ZH"
+      ? "请先确认 macOS 授权、Cmd+V 自动保护和安全粘贴快捷键。否则安装了也可能没有实际保护。"
+      : "Confirm macOS permissions, automatic Cmd+V protection, and the safe paste shortcut before relying on it.";
+  } else if (!vscodeOk) {
+    fields.setupTitle.textContent = currentLang === "ZH"
+      ? (status.protect_normal_paste
+        ? "基础保护已就绪；建议安装 VS Code 插件"
+        : "安全粘贴已就绪；建议安装 VS Code 插件")
+      : (status.protect_normal_paste
+        ? "Core protection is ready; install the VS Code extension"
+        : "Safe Paste is ready; install the VS Code extension");
+    fields.setupCopy.textContent = currentLang === "ZH"
+      ? "安装插件后，BeforePaste 才能识别 VS Code 集成终端里的 AI CLI。插件侧边栏或 Chat 面板仍建议使用安全粘贴快捷键。"
+      : "Install the extension to detect AI CLIs in VS Code integrated terminals. Use Safe Paste for extension sidebars or chat panels.";
+  } else {
+    fields.setupTitle.textContent = currentLang === "ZH"
+      ? (status.protect_normal_paste ? "粘贴保护已就绪" : "安全粘贴已就绪")
+      : (status.protect_normal_paste ? "Paste protection is ready" : "Safe Paste is ready");
+    fields.setupCopy.textContent = currentLang === "ZH"
+      ? (status.protect_normal_paste
+        ? "Cmd+V 自动保护、安全粘贴快捷键和 VS Code 集成终端识别都已可用。"
+        : "普通 Cmd+V 不会被接管；需要脱敏时请使用安全粘贴快捷键。")
+      : (status.protect_normal_paste
+        ? "Automatic Cmd+V protection, safe paste, and VS Code integrated terminal detection are ready."
+        : "Normal paste is unchanged; use the Safe Paste shortcut when you need redaction.");
+  }
+}
+
 function renderDoctor(status) {
+  lastRuntimeStatus = status;
   currentPlatform = status.platform || currentPlatform;
   applyPlatformCopy(currentPlatform);
   renderPermission(fields.doctorAccessibility, status.permissions.accessibility, "accessibility");
@@ -575,6 +734,7 @@ function renderDoctor(status) {
   } else {
     fields.doctorLastPaste.textContent = tr("lastPasteNone");
   }
+  renderSetupChecklist();
 }
 
 async function refreshDoctor() {
@@ -598,19 +758,34 @@ async function refreshVscodeBridge() {
   setDiagnosticStatus(fields.vscodeBridgeStatus, tr("checking"), "muted");
   try {
     const status = await invoke("get_vscode_bridge_status");
-    setDiagnosticStatus(
-      fields.vscodeBridgeStatus,
-      status.installed ? tr("installed") : tr("notInstalled"),
-      status.installed ? "ok" : "warn",
-    );
-    const canInstall = Boolean(status.vsix_path) && !status.installed;
-    fields.installVscodeBridge.hidden = !canInstall;
-    fields.installVscodeBridge.title = canInstall
-      ? (status.install_command || "")
-      : (status.message || "");
+    renderVscodeBridgeStatus(status);
   } catch (error) {
     setDiagnosticStatus(fields.vscodeBridgeStatus, String(error), "warn");
+    setDiagnosticStatus(fields.doctorVscodeBridge, String(error), "warn");
+    lastVscodeBridgeStatus = {
+      installed: false,
+      vsix_path: null,
+      install_command: "",
+      message: String(error),
+    };
+    renderSetupChecklist();
   }
+}
+
+function renderVscodeBridgeStatus(status) {
+  lastVscodeBridgeStatus = status;
+  const label = status.installed ? tr("installed") : tr("notInstalled");
+  const state = status.installed ? "ok" : "warn";
+  setDiagnosticStatus(fields.vscodeBridgeStatus, label, state);
+  setDiagnosticStatus(fields.doctorVscodeBridge, label, state);
+  const canInstall = Boolean(status.vsix_path) && !status.installed;
+  fields.installVscodeBridge.hidden = !canInstall;
+  fields.installVscodeBridge.title = canInstall
+    ? (status.install_command || "")
+    : (status.message || "");
+  fields.doctorInstallVscodeBridge.hidden = !canInstall;
+  fields.doctorInstallVscodeBridge.title = fields.installVscodeBridge.title;
+  renderSetupChecklist();
 }
 
 function collectConfig() {
@@ -637,17 +812,19 @@ function collectConfig() {
 }
 
 async function load() {
-  const [config, catalog, cliCatalog, status] = await Promise.all([
+  const [config, catalog, cliCatalog, status, vscodeStatus] = await Promise.all([
     invoke("get_config"),
     invoke("get_target_catalog"),
     invoke("get_cli_target_catalog"),
     invoke("get_runtime_status"),
+    invoke("get_vscode_bridge_status"),
   ]);
   targetCatalog = catalog;
   cliTargetCatalog = cliCatalog;
+  lastVscodeBridgeStatus = vscodeStatus;
   renderConfig(config, status.platform);
   renderDoctor(status);
-  await refreshVscodeBridge();
+  renderVscodeBridgeStatus(vscodeStatus);
   activatePanel(savedPanelName(), { remember: false });
 }
 
@@ -855,6 +1032,10 @@ fields.doctorRefresh.addEventListener("click", async () => {
   setStatus(tr("statusRefreshed"));
 });
 
+fields.setupOpenDoctor.addEventListener("click", () => {
+  activatePanel("doctor");
+});
+
 fields.doctorResetPermissions.addEventListener("click", async () => {
   if (!window.confirm(tr("resetPermissionsConfirm"))) {
     return;
@@ -874,14 +1055,29 @@ fields.doctorResetPermissions.addEventListener("click", async () => {
   }
 });
 
-fields.installVscodeBridge.addEventListener("click", async () => {
+async function installVscodeBridgeFromUi(button) {
+  button.disabled = true;
   try {
     await invoke("install_vscode_bridge");
     await refreshVscodeBridge();
     setStatus(tr("installDone"));
   } catch (error) {
     setStatus(`${tr("installFailed")}: ${String(error)}`);
+  } finally {
+    button.disabled = false;
   }
+}
+
+fields.installVscodeBridge.addEventListener("click", async () => {
+  await installVscodeBridgeFromUi(fields.installVscodeBridge);
+});
+
+fields.setupInstallVscodeBridge.addEventListener("click", async () => {
+  await installVscodeBridgeFromUi(fields.setupInstallVscodeBridge);
+});
+
+fields.doctorInstallVscodeBridge.addEventListener("click", async () => {
+  await installVscodeBridgeFromUi(fields.doctorInstallVscodeBridge);
 });
 
 for (const button of document.querySelectorAll("[data-open-privacy]")) {

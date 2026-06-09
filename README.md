@@ -144,7 +144,16 @@ currently macOS-first.
 ### VS Code Extension
 
 The VS Code extension helps BeforePaste identify AI CLIs running inside VS Code
-integrated terminals. It does not redact clipboard contents itself.
+integrated terminals. It does not redact clipboard contents itself. The desktop
+app shows the extension status in Preferences and Doctor; if the bundled `.vsix`
+is available, the `Install extension` button installs it with the VS Code `code`
+CLI.
+
+Release download:
+
+```text
+https://github.com/beforewire/beforepaste/releases/latest/download/beforepaste-vscode.vsix
+```
 
 Development install from this repo:
 
@@ -152,8 +161,9 @@ Development install from this repo:
 cd vscode-extension
 npm ci
 npm run compile
-npm run package
-code --install-extension beforepaste-0.1.0.vsix --force
+mkdir -p dist
+npm run package -- --out dist/beforepaste-vscode.vsix
+code --install-extension dist/beforepaste-vscode.vsix --force
 ```
 
 If `code` is not available, run this from VS Code first:
@@ -170,14 +180,17 @@ Command Palette -> BeforePaste: Show Terminal Bridge Status
 
 Then restart `codex`, `claude`, `gemini`, `aider`, `continue`, or `opencode`
 inside the integrated terminal so VS Code can publish the active terminal state.
+VS Code extension sidebars and chat panels are not always exposed to the bridge;
+use the Safe Paste shortcut there if Doctor does not show a VS Code AI target.
 
 ## Quick Start
 
 1. Install and launch the desktop app.
-2. Open `Doctor` from the tray and grant the required macOS permissions.
-3. Keep `Advanced` mode on for normal `Cmd+V` protection in AI targets.
-4. Use `Safe Paste Shortcut Only` if you prefer an explicit protected shortcut.
-5. Optional: install the VS Code extension for integrated terminal detection.
+2. Use the setup checklist in Preferences to confirm permissions and shortcuts.
+3. Open `Doctor` from the tray and grant the required macOS permissions.
+4. Keep `Advanced` mode on for normal `Cmd+V` protection in AI targets.
+5. Use `Safe Paste Shortcut Only` if you prefer an explicit protected shortcut.
+6. Install the VS Code extension if you paste into AI CLIs inside VS Code terminals.
 
 Doctor shows permission status and runtime status separately. A permission can
 be granted while the selected paste mode is still off or needs attention.
@@ -200,6 +213,7 @@ want an explicit action and no normal paste interception.
 The tray menu is intentionally small:
 
 - `BeforePaste: ...` shows whether protection is ready.
+- Click the `BeforePaste: ...` status row to open Doctor when setup needs attention.
 - `Last target: ...` shows the most recent detected AI target.
 - `Protected 24h: ...` shows the rolling 24-hour protection count.
 - `Mode` switches between Advanced and Safe Paste Shortcut Only.
