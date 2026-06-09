@@ -208,17 +208,15 @@ fn assignment_context(text: &str, s: usize, e: usize) -> Option<AssignmentContex
     let line_start = text[..s].rfind('\n').map(|i| i + 1).unwrap_or(0);
     let line_end = text[e..].find('\n').map(|i| e + i).unwrap_or(text.len());
     let line = &text[line_start..line_end];
-    let eq_rel = line.find('=')?;
-    let eq = line_start + eq_rel;
+    let (sep_rel, sep_len) = assignment_separator(line)?;
+    let sep = line_start + sep_rel;
 
-    let key = line[..eq_rel].trim();
-    let key = key.strip_prefix('#').unwrap_or(key).trim();
-    let key = key.strip_prefix("export ").unwrap_or(key).trim();
+    let key = normalize_assignment_key(&line[..sep_rel])?;
     if !is_secret_assignment_key(key) {
         return None;
     }
 
-    let mut vs = eq + 1;
+    let mut vs = sep + sep_len;
     while vs < line_end && matches!(b[vs], b' ' | b'\t') {
         vs += 1;
     }
@@ -244,7 +242,7 @@ fn assignment_context(text: &str, s: usize, e: usize) -> Option<AssignmentContex
     if value_start >= value_end {
         return None;
     }
-    let span_touches_key = s <= eq;
+    let span_touches_key = s <= sep;
     if !(span_touches_key || (value_start <= s && e <= value_end)) {
         return None;
     }
@@ -256,13 +254,45 @@ fn assignment_context(text: &str, s: usize, e: usize) -> Option<AssignmentContex
     })
 }
 
+fn assignment_separator(line: &str) -> Option<(usize, usize)> {
+    line.char_indices()
+        .find(|&(_, ch)| matches!(ch, '=' | ':' | '：'))
+        .map(|(idx, ch)| (idx, ch.len_utf8()))
+}
+
+fn normalize_assignment_key(raw: &str) -> Option<&str> {
+    let mut key = raw.trim();
+    key = key.strip_prefix('#').unwrap_or(key).trim();
+
+    if let Some(rest) = key.strip_prefix("- ") {
+        key = rest.trim();
+    } else if let Some(rest) = key.strip_prefix("* ") {
+        key = rest.trim();
+    }
+
+    if key.len() >= 7 && key[..7].eq_ignore_ascii_case("export ") {
+        key = key[7..].trim();
+    }
+
+    if let Some(inner) = key.strip_prefix("**").and_then(|s| s.strip_suffix("**")) {
+        key = inner.trim();
+    }
+
+    key = key.trim_matches(|c| matches!(c, '"' | '\'' | '`'));
+    if key.is_empty() {
+        None
+    } else {
+        Some(key)
+    }
+}
+
 fn is_secret_assignment_key(key: &str) -> bool {
     let mut chars = key.chars();
     let Some(first) = chars.next() else {
         return false;
     };
     if !(first == '_' || first.is_ascii_alphabetic())
-        || !chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+        || !chars.all(|c| c == '_' || c == '-' || c == '.' || c.is_ascii_alphanumeric())
     {
         return false;
     }
@@ -275,8 +305,11 @@ fn is_secret_assignment_key(key: &str) -> bool {
         "passwd",
         "apikey",
         "api_key",
+        "api-key",
         "private_key",
+        "private-key",
         "access_key",
+        "access-key",
         "_key",
     ]
     .iter()
@@ -369,6 +402,36 @@ mod tests {
             "[R]",
         );
         assert_eq!(out, "export E2B_API_KEY=\"[R]\"");
+    }
+
+    #[test]
+    fn colon_assignment_whole_line_hit_redacts_value_only() {
+        let input = "**api_key**: sk-demo123";
+        let out = redact_with_spans(
+            input,
+            &[(0, input.len(), "Labeled Secret Line")],
+            &[],
+            &[],
+            &[],
+            RedactStyle::Typed,
+            "[R]",
+        );
+        assert_eq!(out, "**api_key**: [API_KEY]");
+    }
+
+    #[test]
+    fn fullwidth_colon_assignment_redacts_value_only() {
+        let input = "api_key：sk-demo123";
+        let out = redact_with_spans(
+            input,
+            &[(0, input.len(), "Labeled Secret Line")],
+            &[],
+            &[],
+            &[],
+            RedactStyle::Marker,
+            "[R]",
+        );
+        assert_eq!(out, "api_key：[R]");
     }
 
     #[test]

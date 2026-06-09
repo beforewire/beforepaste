@@ -59,6 +59,62 @@ fn export_assignments_keep_names_and_redact_values() {
 }
 
 #[test]
+fn short_labeled_secret_values_are_redacted() {
+    let cfg = fresh_cfg();
+    let det = Detector::from_config(&cfg);
+    let input = concat!(
+        "model_name: deepseek-demo\n",
+        "base_url: https://example.invalid/v1\n",
+        "api_key: sk-demo123\n",
+        "**api_key**: sk-demo456\n",
+        "export ALIYUN_ACCESS_KEY_SECRET=abcd\n",
+    );
+    let (out, names) = redact_with(&det, &cfg, input);
+
+    assert!(!names.is_empty(), "expected short labeled secrets to fire");
+    assert_eq!(
+        out,
+        concat!(
+            "model_name: deepseek-demo\n",
+            "base_url: https://example.invalid/v1\n",
+            "api_key: [REDACTED]\n",
+            "**api_key**: [REDACTED]\n",
+            "export ALIYUN_ACCESS_KEY_SECRET=[REDACTED]\n",
+        )
+    );
+}
+
+#[test]
+fn typed_short_labeled_secret_values_keep_key_names() {
+    let mut cfg = fresh_cfg();
+    cfg.redact_style = RedactStyle::Typed;
+    let det = Detector::from_config(&cfg);
+    let input = concat!(
+        "api_key: sk-demo123\n",
+        "**api_key**: sk-demo456\n",
+        "export ALIYUN_ACCESS_KEY_SECRET=abcd\n",
+    );
+    let (once, names) = redact_with(&det, &cfg, input);
+
+    assert!(!names.is_empty(), "expected short labeled secrets to fire");
+    assert_eq!(
+        once,
+        concat!(
+            "api_key: [API_KEY]\n",
+            "**api_key**: [API_KEY]\n",
+            "export ALIYUN_ACCESS_KEY_SECRET=[ALIYUN_ACCESS_KEY_SECRET]\n",
+        )
+    );
+
+    let (twice, twice_names) = redact_with(&det, &cfg, &once);
+    assert_eq!(twice, once);
+    assert!(
+        twice_names.is_empty(),
+        "already-redacted short labels should not be detected again"
+    );
+}
+
+#[test]
 fn typed_dotenv_assignment_redaction_is_idempotent_with_unbalanced_quote() {
     let mut cfg = fresh_cfg();
     cfg.redact_style = RedactStyle::Typed;

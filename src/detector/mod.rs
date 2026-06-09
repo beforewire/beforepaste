@@ -498,9 +498,14 @@ impl Detector {
 }
 
 fn assignment_value_is_redaction_placeholder(s: &str) -> bool {
-    let Some((_, value)) = s.split_once('=') else {
+    let Some((sep_idx, sep_len)) = s
+        .char_indices()
+        .find(|&(_, ch)| matches!(ch, '=' | ':' | '：'))
+        .map(|(idx, ch)| (idx, ch.len_utf8()))
+    else {
         return false;
     };
+    let (_, value) = s.split_at(sep_idx + sep_len);
     let mut value = value.trim();
     value = value.strip_prefix('"').unwrap_or(value);
     value = value.strip_prefix('\'').unwrap_or(value);

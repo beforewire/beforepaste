@@ -7,7 +7,15 @@ pub fn patterns() -> Vec<SecretPattern> {
             category: "Structured",
             severity: Severity::Critical,
             regex: re(
-                r"(?im)^\s*(?:#\s*)?(?:export\s+)?[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API_KEY|PRIVATE_KEY)[A-Z0-9_]*\s*=\s*\S{6,}",
+                r"(?im)^\s*(?:#\s*)?(?:export\s+)?[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API_KEY|PRIVATE_KEY)[A-Z0-9_]*\s*=\s*\S+",
+            ),
+        },
+        SecretPattern {
+            name: "Labeled Secret Line",
+            category: "Structured",
+            severity: Severity::Critical,
+            regex: re(
+                r#"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?['"`]?[A-Z0-9_.-]*(?:SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API_KEY|PRIVATE_KEY|ACCESS_KEY)[A-Z0-9_.-]*['"`]?(?:\*\*)?\s*[:：]\s*\S+"#,
             ),
         },
         SecretPattern {
