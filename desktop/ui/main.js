@@ -130,7 +130,7 @@ const copy = {
     restartAfterPrivacy: "After granting access, quit and reopen BeforePaste. Trust Doctor status over System Settings labels.",
     resetPermissions: "Reset macOS permissions",
     resetPermissionsConfirm: "This clears BeforePaste permission records for Accessibility, Input Monitoring, Paste Events, and Automation. Continue?",
-    resetPermissionsDone: "BeforePaste permission records were reset. Quit and reopen BeforePaste, then use Open to grant access again.",
+    resetPermissionsDone: "BeforePaste permission records were reset. Quit and reopen BeforePaste, then request access again from Doctor.",
     resetPermissionsFailed: "Permission reset failed",
     recommended: "Recommended",
     web: "Web",
@@ -168,7 +168,7 @@ const copy = {
     testSuccessTitle: "Protection works",
     testSuccessCopy: "BeforePaste redacted the sample locally before it reached the test box.",
     testRawTitle: "Still seeing raw text",
-    testRawCopy: "Check Cmd+V interception capability, or try the Safe Paste shortcut.",
+    testRawCopy: "Check Input Monitoring for automatic Cmd+V, or try the Safe Paste shortcut.",
     testChangedTitle: "Paste result changed",
     testChangedCopy: "The text does not match the expected protected sample yet.",
     updateCheckingTitle: "Checking for updates",
@@ -223,7 +223,7 @@ const copy = {
     restartAfterPrivacy: "完成授权后，请退出并重新打开 BeforePaste；请以 Doctor 状态为准。",
     resetPermissions: "重置 macOS 授权",
     resetPermissionsConfirm: "这会清除 BeforePaste 在辅助功能、输入监控、粘贴事件和自动化中的授权记录。是否继续？",
-    resetPermissionsDone: "已清除 BeforePaste 的旧授权记录。请退出并重新打开 BeforePaste，然后点“打开”重新授权。",
+    resetPermissionsDone: "已清除 BeforePaste 的旧授权记录。请退出并重新打开 BeforePaste，然后在诊断页重新请求授权。",
     resetPermissionsFailed: "重置授权失败",
     recommended: "推荐",
     web: "网页",
@@ -261,7 +261,7 @@ const copy = {
     testSuccessTitle: "🎉 已生效",
     testSuccessCopy: "BeforePaste 已经在本机完成脱敏，测试内容中的密钥被替换了。",
     testRawTitle: "还没有生效",
-    testRawCopy: "你看到的是原始测试内容，请检查 Cmd+V 接管能力，或改用安全粘贴快捷键。",
+    testRawCopy: "你看到的是原始测试内容，请检查输入监控授权，或改用安全粘贴快捷键。",
     testChangedTitle: "粘贴结果不完整",
     testChangedCopy: "当前内容还不是预期的脱敏结果，请重新复制测试内容再试一次。",
     updateCheckingTitle: "正在检查更新",
@@ -327,8 +327,8 @@ function applyStaticCopy() {
   fields.setupDismissPrompt.textContent = currentLang === "ZH" ? "下次不再提示" : "Do not remind me again";
   fields.setupPermissionsTitle.textContent = currentLang === "ZH" ? "macOS 授权" : "macOS permissions";
   fields.setupPermissionsCopy.textContent = currentLang === "ZH"
-    ? "安全粘贴需要辅助功能；自动保护 Cmd+V 还需要键盘监听能力。授权后请退出并重新打开。"
-    : "Safe Paste needs Accessibility; automatic Cmd+V also needs keyboard-listening capability. Quit and reopen after granting access.";
+    ? "安全粘贴需要辅助功能；自动保护 Cmd+V 还需要输入监控。点击授权会触发 macOS 系统提示。"
+    : "Safe Paste needs Accessibility; automatic Cmd+V also needs Input Monitoring. The permission button triggers the macOS prompt.";
   fields.setupOpenPermissions.textContent = tr("openSettings");
   fields.setupCmdvTitle.textContent = currentLang === "ZH" ? "自动保护 Cmd+V" : "Automatic Cmd+V";
   fields.setupCmdvCopy.textContent = currentLang === "ZH"
@@ -403,7 +403,7 @@ function applyStaticCopy() {
     currentLang === "ZH" ? "正在检查" : "Checking protection",
     currentLang === "ZH" ? "权限状态" : "Permission checks",
     currentLang === "ZH" ? "辅助功能" : "Accessibility",
-    currentLang === "ZH" ? "Cmd+V 接管能力" : "Cmd+V interception capability",
+    currentLang === "ZH" ? "输入监控（Cmd+V 自动保护）" : "Input Monitoring (Cmd+V protection)",
     currentLang === "ZH" ? "应用识别" : "App detection capability",
     currentLang === "ZH" ? "上次保护记录" : "Last protected paste",
     currentLang === "ZH" ? "语言" : "Language",
@@ -427,7 +427,7 @@ function applyStaticCopy() {
     currentLang === "ZH" ? "检查粘贴模式、快捷键、目标识别和权限状态。" : "Checks the selected paste mode, shortcuts, target detection, and permissions.",
     currentLang === "ZH" ? "更新 preview 版本后，如授权状态异常，请删除旧授权并重新授权。" : "After a preview update, reset old macOS permission records if Doctor still reports missing access.",
     currentLang === "ZH" ? "用于执行最后一步粘贴。系统设置里看到已授权，不代表当前这份 app 已被 macOS 接受；请以 Doctor 状态为准。" : "Needed to perform paste actions. System Settings may show BeforePaste as enabled even when this app build is not accepted; trust Doctor status.",
-    currentLang === "ZH" ? "表示当前进程能否接管普通 Cmd+V；不等同于系统设置列表里一定能看到 BeforePaste。" : "Shows whether this running app can intercept normal Cmd+V. It may differ from the visible System Settings list.",
+    currentLang === "ZH" ? "用于自动保护普通 Cmd+V。点击“请求授权”会触发 macOS 输入监控提示；BeforePaste 不能自动替你授权。" : "Needed for automatic Cmd+V protection. Requesting access triggers the macOS Input Monitoring prompt; BeforePaste cannot grant itself access.",
     currentLang === "ZH" ? "用于识别浏览器标签页和终端上下文。如更新后状态异常，请重置 macOS 授权并重新授权。" : "Needed to read browser tab and terminal context. If access looks wrong after updating, reset macOS permissions and grant access again.",
     currentLang === "ZH" ? "只显示状态摘要，不会展示剪贴板内容。" : "Status summary only. Secret text is never shown here.",
     currentLang === "ZH" ? "默认跟随系统语言，也可以在这里手动切换。" : "Use the system language when available, or choose a language here.",
@@ -465,7 +465,9 @@ function applyStaticCopy() {
       : "System Settings can show BeforePaste as enabled even when macOS has not accepted this exact app build. Trust Doctor status.",
   );
   for (const button of document.querySelectorAll("[data-open-privacy]")) {
-    button.textContent = currentLang === "ZH" ? "打开" : "Open";
+    button.textContent = button.dataset.openPrivacy === "input_monitoring"
+      ? (currentLang === "ZH" ? "请求授权" : "Request")
+      : (currentLang === "ZH" ? "打开" : "Open");
   }
   renderUpdateStatus(lastUpdateStatus);
 }
@@ -581,8 +583,8 @@ function applyPlatformCopy(platform) {
       ? `在 ChatGPT、Claude、Gemini、Codex 等目标中按 ${label} 时，先脱敏再粘贴。`
       : "Redact before normal paste when an enabled AI app, site, or terminal is frontmost.";
     fields.inputMonitoringCopy.textContent = currentLang === "ZH"
-      ? `表示当前进程能否接管普通 ${label}；不等同于系统设置列表里一定能看到 BeforePaste。`
-      : `Shows whether this running app can intercept normal ${label}. It may differ from the visible System Settings list.`;
+      ? `用于自动保护普通 ${label}。点击“请求授权”会触发 macOS 输入监控提示；BeforePaste 不能自动替你授权。`
+      : `Needed for automatic ${label} protection. Requesting access triggers the macOS Input Monitoring prompt; BeforePaste cannot grant itself access.`;
   } else {
     fields.normalPasteCopy.textContent = currentLang === "ZH"
       ? "当前平台暂不支持自动保护普通粘贴，请使用安全粘贴快捷键。"
@@ -691,13 +693,15 @@ function renderSetupChecklist() {
     ? [tr("restartPending"), "warn"]
     : setupLabel(
       permissionsOk,
-      tr("available"),
+      tr("granted"),
       currentLang === "ZH" ? "需要处理" : "Needs setup",
     );
   setDiagnosticStatus(fields.setupPermissionsStatus, permissionsLabel, permissionsState);
   fields.setupOpenPermissions.textContent = permissionsOk
     ? (currentLang === "ZH" ? "查看诊断" : "Doctor")
-    : tr("openSettings");
+    : (!accessibilityOk
+      ? tr("openSettings")
+      : (currentLang === "ZH" ? "请求输入监控授权" : "Request Input Monitoring"));
 
   let cmdvLabel = currentLang === "ZH" ? "可用" : "Ready";
   let cmdvState = "ok";
@@ -785,7 +789,7 @@ function renderDoctor(status) {
   currentPlatform = status.platform || currentPlatform;
   applyPlatformCopy(currentPlatform);
   renderPermission(fields.doctorAccessibility, status.permissions.accessibility, "accessibility");
-  renderCapability(fields.doctorInputMonitoring, status.permissions.input_monitoring, "input_monitoring");
+  renderPermission(fields.doctorInputMonitoring, status.permissions.input_monitoring, "input_monitoring");
   renderPermission(fields.doctorAutomation, status.permissions.automation, "automation");
 
   setDiagnosticStatus(
@@ -845,7 +849,7 @@ function renderDoctor(status) {
     summaryTitle = `${normalPasteLabel(currentPlatform)} ${tr("needsAttention")}`;
     const missing = [];
     if (!status.permissions.accessibility) missing.push(currentLang === "ZH" ? "辅助功能" : "Accessibility");
-    if (!status.permissions.input_monitoring) missing.push(currentLang === "ZH" ? "Cmd+V 接管能力" : "Cmd+V interception capability");
+    if (!status.permissions.input_monitoring) missing.push(currentLang === "ZH" ? "输入监控" : "Input Monitoring");
     const pending = ["accessibility", "input_monitoring"].some((key) => pendingPrivacyChecks.has(key));
     if (pending) {
       summaryCopy = currentLang === "ZH"

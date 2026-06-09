@@ -388,6 +388,10 @@ fn save_config(
         "save_config protect_normal_paste={protect_normal_paste}"
     ));
     if protect_normal_paste {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = request_input_monitoring_trust();
+        }
         ensure_normal_paste_event_tap(state.inner().clone()).map_err(|e| e.to_string())?;
     }
     let _ = app.emit("beforepaste-config-updated", ());
@@ -412,6 +416,10 @@ fn set_normal_paste_mode(
         .protect_normal_paste
         .store(protect_normal_paste, Ordering::SeqCst);
     if protect_normal_paste {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = request_input_monitoring_trust();
+        }
         ensure_normal_paste_event_tap(Arc::clone(&state)).map_err(|e| e.to_string())?;
     }
     schedule_tray_status_update(app.clone(), Arc::clone(&state), Duration::from_millis(150));
@@ -1052,12 +1060,15 @@ fn request_accessibility_trust() -> bool {
 
 #[cfg(target_os = "macos")]
 fn request_input_monitoring_trust() -> bool {
-    #[link(name = "CoreGraphics", kind = "framework")]
+    #[link(name = "IOKit", kind = "framework")]
     unsafe extern "C" {
-        fn CGRequestListenEventAccess() -> bool;
+        fn IOHIDRequestAccess(request_type: i32) -> bool;
     }
 
-    unsafe { CGRequestListenEventAccess() }
+    // kIOHIDRequestTypeListenEvent. This is the Input Monitoring permission
+    // shown in System Settings; using IOHID avoids treating Accessibility-only
+    // access as if explicit keyboard monitoring had been granted.
+    unsafe { IOHIDRequestAccess(1) }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1082,12 +1093,13 @@ fn accessibility_trusted() -> bool {
 
 #[cfg(target_os = "macos")]
 fn input_monitoring_trusted() -> bool {
-    #[link(name = "CoreGraphics", kind = "framework")]
+    #[link(name = "IOKit", kind = "framework")]
     unsafe extern "C" {
-        fn CGPreflightListenEventAccess() -> bool;
+        fn IOHIDCheckAccess(request_type: i32) -> i32;
     }
 
-    unsafe { CGPreflightListenEventAccess() }
+    // kIOHIDAccessTypeGranted == 0, kIOHIDRequestTypeListenEvent == 1.
+    unsafe { IOHIDCheckAccess(1) == 0 }
 }
 
 #[cfg(not(target_os = "macos"))]

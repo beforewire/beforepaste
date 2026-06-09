@@ -1,6 +1,6 @@
 [package]
 name = "beforepaste"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 default-run = "beforepaste"
 description = "Local clipboard protection for AI prompts"
