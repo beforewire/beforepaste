@@ -54,6 +54,10 @@ pub struct Config {
     pub check_for_updates: bool,
     #[serde(default)]
     pub auto_install: bool,
+    /// Desktop-only: when false, the tray app may open Preferences on launch
+    /// to guide the user through permissions and the paste test.
+    #[serde(default)]
+    pub setup_prompt_dismissed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skip_version: Option<String>,
     /// Latest release tag observed by `upgrade-check` (e.g. "v1.2.3").
@@ -223,6 +227,7 @@ impl Default for Config {
             hotkey: default_hotkey(),
             check_for_updates: true,
             auto_install: false,
+            setup_prompt_dismissed: false,
             skip_version: None,
             last_seen_version: None,
             disabled_categories: Vec::new(),

@@ -7,6 +7,7 @@ const fields = {
   setupTitle: document.querySelector("#setup-title"),
   setupCopy: document.querySelector("#setup-copy"),
   setupOpenDoctor: document.querySelector("#setup-open-doctor"),
+  setupDismissPrompt: document.querySelector("#setup-dismiss-prompt"),
   setupPermissionsTitle: document.querySelector("#setup-permissions-title"),
   setupPermissionsCopy: document.querySelector("#setup-permissions-copy"),
   setupPermissionsStatus: document.querySelector("#setup-permissions-status"),
@@ -59,7 +60,13 @@ const fields = {
   pasteTestTitle: document.querySelector("#paste-test-title"),
   pasteTestCopy: document.querySelector("#paste-test-copy"),
   pasteTestNote: document.querySelector("#paste-test-note"),
+  pasteTestSourceLabel: document.querySelector("#paste-test-source-label"),
+  pasteTestSource: document.querySelector("#paste-test-source"),
+  pasteTestOutputLabel: document.querySelector("#paste-test-output-label"),
   pasteTestOutput: document.querySelector("#paste-test-output"),
+  pasteTestResult: document.querySelector("#paste-test-result"),
+  pasteTestResultTitle: document.querySelector("#paste-test-result-title"),
+  pasteTestResultCopy: document.querySelector("#paste-test-result-copy"),
   copyTestPayload: document.querySelector("#copy-test-payload"),
   vscodeBridgeStatus: document.querySelector("#vscode-bridge-status"),
   installVscodeBridge: document.querySelector("#install-vscode-bridge"),
@@ -73,6 +80,8 @@ let cliTargetCatalog = [];
 let currentLang = "EN";
 let lastRuntimeStatus;
 let lastVscodeBridgeStatus;
+let lastTestPayloadStatus;
+let pasteTestTargetActive = false;
 const pendingPrivacyChecks = new Set();
 const lastPanelKey = "beforepaste:last-panel";
 
@@ -103,8 +112,10 @@ const copy = {
     unavailable: "❌ Unavailable",
     openSettings: "Open settings",
     copySample: "Copy sample",
-    sampleCopied: "Sample copied. Click the test box and press the Safe Paste shortcut.",
+    sampleCopied: "Sample copied. Paste it into the test box with Cmd+V or the Safe Paste shortcut.",
+    setupDismissed: "Launch reminder dismissed. You can still open Preferences from the tray.",
     restartPending: "Restart to confirm",
+    resettingPermissions: "Resetting macOS permission records...",
     restartAfterPrivacy: "After granting access, quit and reopen BeforePaste. Trust Doctor status over System Settings labels.",
     resetPermissions: "Reset macOS permissions",
     resetPermissionsConfirm: "This clears BeforePaste permission records for Accessibility, Input Monitoring, Paste Events, and Automation. Continue?",
@@ -139,6 +150,16 @@ const copy = {
     lastPasteNone: "No paste recorded",
     manualTarget: "Manual target",
     autoDetection: "Auto",
+    testWaitingTitle: "Waiting for test",
+    testWaitingCopy: "Copy the sample, then paste it into the test box.",
+    testCopiedTitle: "Sample copied",
+    testCopiedCopy: "Click the test box and press Cmd+V. Safe Paste also works here.",
+    testSuccessTitle: "Protection works",
+    testSuccessCopy: "BeforePaste redacted the sample locally before it reached the test box.",
+    testRawTitle: "Still seeing raw text",
+    testRawCopy: "Check Cmd+V interception capability, or try the Safe Paste shortcut.",
+    testChangedTitle: "Paste result changed",
+    testChangedCopy: "The text does not match the expected protected sample yet.",
   },
   ZH: {
     panels: {
@@ -166,8 +187,10 @@ const copy = {
     unavailable: "❌ 不可用",
     openSettings: "打开设置",
     copySample: "复制测试内容",
-    sampleCopied: "测试内容已复制。点击测试框，然后按安全粘贴快捷键。",
+    sampleCopied: "测试内容已复制。可以在测试框里直接按 Cmd+V，也可以按安全粘贴快捷键。",
+    setupDismissed: "已关闭启动提醒；之后仍可从托盘打开设置。",
     restartPending: "重启后确认",
+    resettingPermissions: "正在重置 macOS 授权记录...",
     restartAfterPrivacy: "完成授权后，请退出并重新打开 BeforePaste；请以 Doctor 状态为准。",
     resetPermissions: "重置 macOS 授权",
     resetPermissionsConfirm: "这会清除 BeforePaste 在辅助功能、输入监控、粘贴事件和自动化中的授权记录。是否继续？",
@@ -202,6 +225,16 @@ const copy = {
     lastPasteNone: "暂无粘贴记录",
     manualTarget: "手动指定目标",
     autoDetection: "自动",
+    testWaitingTitle: "等待测试",
+    testWaitingCopy: "先复制测试内容，再粘贴到测试框。",
+    testCopiedTitle: "测试内容已复制",
+    testCopiedCopy: "点击测试框后按 Cmd+V。这里也支持安全粘贴快捷键。",
+    testSuccessTitle: "🎉 已生效",
+    testSuccessCopy: "BeforePaste 已经在本机完成脱敏，测试内容中的密钥被替换了。",
+    testRawTitle: "还没有生效",
+    testRawCopy: "你看到的是原始测试内容，请检查 Cmd+V 接管能力，或改用安全粘贴快捷键。",
+    testChangedTitle: "粘贴结果不完整",
+    testChangedCopy: "当前内容还不是预期的脱敏结果，请重新复制测试内容再试一次。",
   },
 };
 
@@ -246,6 +279,7 @@ function applyStaticCopy() {
     ? "BeforePaste 需要 macOS 授权、可用快捷键和 VS Code 插件状态都清楚，避免安装后实际没有保护。"
     : "BeforePaste needs macOS permissions, a working shortcut, and clear VS Code bridge status so it actually protects paste.";
   fields.setupOpenDoctor.textContent = currentLang === "ZH" ? "打开诊断" : "Open Doctor";
+  fields.setupDismissPrompt.textContent = currentLang === "ZH" ? "下次不再提示" : "Do not remind me again";
   fields.setupPermissionsTitle.textContent = currentLang === "ZH" ? "macOS 授权" : "macOS permissions";
   fields.setupPermissionsCopy.textContent = currentLang === "ZH"
     ? "安全粘贴需要辅助功能；自动保护 Cmd+V 还需要键盘监听能力。授权后请退出并重新打开。"
@@ -271,15 +305,18 @@ function applyStaticCopy() {
   fields.doctorInstallVscodeBridge.textContent = tr("installExtension");
   fields.pasteTestTitle.textContent = currentLang === "ZH" ? "验证保护效果" : "Try a protected paste";
   fields.pasteTestCopy.textContent = currentLang === "ZH"
-    ? "复制一段安全的测试内容，然后在下面的框里按安全粘贴快捷键，确认看到脱敏后的占位符。"
-    : "Copy a safe sample, then press the Safe Paste shortcut in the box below to confirm redaction.";
+    ? "复制一段安全的测试内容，然后在右侧测试框按 Cmd+V，确认能看到脱敏后的占位符。"
+    : "Copy a safe sample, then press Cmd+V in the test box to confirm redaction.";
   fields.copyTestPayload.textContent = tr("copySample");
+  fields.pasteTestSourceLabel.textContent = currentLang === "ZH" ? "测试内容源" : "Sample source";
+  fields.pasteTestOutputLabel.textContent = currentLang === "ZH" ? "在这里粘贴" : "Paste here";
   fields.pasteTestOutput.placeholder = currentLang === "ZH"
-    ? "点击“复制测试内容”，再在这里按安全粘贴快捷键"
-    : "Click Copy sample, then press the Safe Paste shortcut here";
+    ? "点击“复制测试内容”，再在这里按 Cmd+V"
+    : "Click Copy sample, then press Cmd+V here";
   fields.pasteTestNote.textContent = currentLang === "ZH"
-    ? "在这个测试框里请使用安全粘贴快捷键；普通 Cmd+V 只会在识别到 AI 目标时自动保护。"
-    : "Use Safe Paste in this test box. Normal Cmd+V is only protected in detected AI targets.";
+    ? "这个测试框会被临时当作 BeforePaste 测试目标，因此可以直接验证普通 Cmd+V；安全粘贴快捷键也同样可用。"
+    : "This box is treated as a temporary BeforePaste test target, so normal Cmd+V can be verified here. Safe Paste works too.";
+  renderPasteTestResult("idle");
 
   const panelNames = ["paste", "redaction", "targets", "doctor", "updates", "advanced"];
   for (const panel of panelNames) {
@@ -389,6 +426,7 @@ function renderConfig(config, platform = currentPlatform) {
   currentLang = languageFromConfig(config);
   fields.language.value = currentLang;
   applyStaticCopy();
+  fields.setupDismissPrompt.hidden = Boolean(config.setup_prompt_dismissed);
   fields.beforepasteEnabled.checked = Boolean(config.beforepaste_enabled);
   applyPlatformCopy(currentPlatform);
   const advancedMode = currentPlatform === "macos" && Boolean(config.protect_normal_paste);
@@ -455,6 +493,8 @@ function activatePanel(panel, options = {}) {
     refreshDoctor().catch((error) => {
       setStatus(String(error));
     });
+  } else if (pasteTestTargetActive) {
+    setPasteTestTargetActive(false).catch((error) => setStatus(String(error)));
   }
 }
 
@@ -531,27 +571,30 @@ function formatTargetReason(reason) {
   if (source === "shortcut") {
     return tr("safePaste");
   }
+  if (source === "test") {
+    return currentLang === "ZH" ? "BeforePaste 测试框" : "BeforePaste test box";
+  }
   return titleCase(detail || kind || reason);
 }
 
 function permissionLabel(value, key) {
+  if (key && pendingPrivacyChecks.has(key)) {
+    return [tr("restartPending"), "warn"];
+  }
   if (value) {
     if (key) pendingPrivacyChecks.delete(key);
     return [tr("granted"), "ok"];
-  }
-  if (key && pendingPrivacyChecks.has(key)) {
-    return [tr("restartPending"), "warn"];
   }
   return [tr("missing"), "warn"];
 }
 
 function capabilityLabel(value, key) {
+  if (key && pendingPrivacyChecks.has(key)) {
+    return [tr("restartPending"), "warn"];
+  }
   if (value) {
     if (key) pendingPrivacyChecks.delete(key);
     return [tr("available"), "ok"];
-  }
-  if (key && pendingPrivacyChecks.has(key)) {
-    return [tr("restartPending"), "warn"];
   }
   return [tr("unavailable"), "warn"];
 }
@@ -580,7 +623,10 @@ function renderSetupChecklist() {
   const inputMonitoringOk = !macos
     || !status.protect_normal_paste
     || status.permissions.input_monitoring;
-  const permissionsOk = accessibilityOk && inputMonitoringOk;
+  const permissionsPending = ["accessibility", "input_monitoring"].some((key) =>
+    pendingPrivacyChecks.has(key)
+  );
+  const permissionsOk = accessibilityOk && inputMonitoringOk && !permissionsPending;
   const cmdvOk = status.beforepaste_enabled
     && macos
     && status.protect_normal_paste
@@ -589,11 +635,13 @@ function renderSetupChecklist() {
   const safeOk = status.beforepaste_enabled && status.force_paste_hotkey_registered;
   const vscodeOk = Boolean(vscode?.installed);
 
-  const [permissionsLabel, permissionsState] = setupLabel(
-    permissionsOk,
-    tr("available"),
-    currentLang === "ZH" ? "需要处理" : "Needs setup",
-  );
+  const [permissionsLabel, permissionsState] = permissionsPending
+    ? [tr("restartPending"), "warn"]
+    : setupLabel(
+      permissionsOk,
+      tr("available"),
+      currentLang === "ZH" ? "需要处理" : "Needs setup",
+    );
   setDiagnosticStatus(fields.setupPermissionsStatus, permissionsLabel, permissionsState);
   fields.setupOpenPermissions.textContent = permissionsOk
     ? (currentLang === "ZH" ? "查看诊断" : "Doctor")
@@ -835,6 +883,92 @@ function renderVscodeBridgeStatus(status) {
   renderSetupChecklist();
 }
 
+function normalizeTestText(value) {
+  return String(value || "").replace(/\r\n/g, "\n").trim();
+}
+
+function renderPasteTestResult(state) {
+  const result = fields.pasteTestResult;
+  if (!result) return;
+  result.classList.remove("is-idle", "is-copied", "is-success", "is-warn");
+  const className = {
+    idle: "is-idle",
+    copied: "is-copied",
+    success: "is-success",
+    raw: "is-warn",
+    changed: "is-warn",
+  }[state] || "is-idle";
+  result.classList.add(className);
+  const titleKey = {
+    idle: "testWaitingTitle",
+    copied: "testCopiedTitle",
+    success: "testSuccessTitle",
+    raw: "testRawTitle",
+    changed: "testChangedTitle",
+  }[state] || "testWaitingTitle";
+  const copyKey = {
+    idle: "testWaitingCopy",
+    copied: "testCopiedCopy",
+    success: "testSuccessCopy",
+    raw: "testRawCopy",
+    changed: "testChangedCopy",
+  }[state] || "testWaitingCopy";
+  fields.pasteTestResultTitle.textContent = tr(titleKey);
+  fields.pasteTestResultCopy.textContent = tr(copyKey);
+}
+
+function evaluatePasteTestResult() {
+  const pasted = normalizeTestText(fields.pasteTestOutput.value);
+  if (!pasted) {
+    renderPasteTestResult(lastTestPayloadStatus ? "idle" : "changed");
+    return;
+  }
+  const expected = normalizeTestText(lastTestPayloadStatus?.redacted);
+  const source = normalizeTestText(lastTestPayloadStatus?.source);
+  if (expected && pasted === expected) {
+    renderPasteTestResult("success");
+    return;
+  }
+  if (source && pasted === source) {
+    renderPasteTestResult("raw");
+    return;
+  }
+  if (pasted.includes("sk-beforepaste-demo") || pasted.includes("beforepasteDemoSecret")) {
+    renderPasteTestResult("raw");
+    return;
+  }
+  if (/\[(?:REDACTED|[A-Z0-9_]{3,})\]/.test(pasted)) {
+    renderPasteTestResult("success");
+    return;
+  }
+  renderPasteTestResult("changed");
+}
+
+async function refreshPasteTestPayload() {
+  try {
+    lastTestPayloadStatus = await invoke("get_test_payload_status");
+    fields.pasteTestSource.value = lastTestPayloadStatus.source || "";
+    evaluatePasteTestResult();
+  } catch (error) {
+    fields.pasteTestSource.value = "";
+    renderPasteTestResult("changed");
+    setStatus(String(error));
+  }
+}
+
+async function setPasteTestTargetActive(active) {
+  if (pasteTestTargetActive === active) return;
+  pasteTestTargetActive = active;
+  try {
+    await invoke("set_paste_test_target", { active });
+    if (active) {
+      await refreshDoctor();
+    }
+  } catch (error) {
+    setStatus(String(error));
+  }
+}
+
 function collectConfig() {
   return {
     ...currentConfig,
@@ -850,6 +984,7 @@ function collectConfig() {
     sensitivity: Number(fields.sensitivity.value),
     check_for_updates: Boolean(currentConfig.check_for_updates),
     auto_install: Boolean(currentConfig.auto_install),
+    setup_prompt_dismissed: Boolean(currentConfig.setup_prompt_dismissed),
     lang: fields.language.value,
     redact_style: fields.redactStyle.value,
     redact_pattern: fields.redactPattern.value || "[REDACTED]",
@@ -859,19 +994,23 @@ function collectConfig() {
 }
 
 async function load() {
-  const [config, catalog, cliCatalog, status, vscodeStatus] = await Promise.all([
+  const [config, catalog, cliCatalog, status, vscodeStatus, testPayloadStatus] = await Promise.all([
     invoke("get_config"),
     invoke("get_target_catalog"),
     invoke("get_cli_target_catalog"),
     invoke("get_runtime_status"),
     invoke("get_vscode_bridge_status"),
+    invoke("get_test_payload_status"),
   ]);
   targetCatalog = catalog;
   cliTargetCatalog = cliCatalog;
   lastVscodeBridgeStatus = vscodeStatus;
+  lastTestPayloadStatus = testPayloadStatus;
+  fields.pasteTestSource.value = testPayloadStatus.source || "";
   renderConfig(config, status.platform);
   renderDoctor(status);
   renderVscodeBridgeStatus(vscodeStatus);
+  evaluatePasteTestResult();
   activatePanel(savedPanelName(), { remember: false });
 }
 
@@ -1010,6 +1149,8 @@ async function saveCurrentConfig() {
   const config = collectConfig();
   await invoke("save_config", { config });
   currentConfig = config;
+  fields.setupDismissPrompt.hidden = Boolean(config.setup_prompt_dismissed);
+  await refreshPasteTestPayload();
   setStatus(tr("statusSaved"));
 }
 
@@ -1083,6 +1224,22 @@ fields.setupOpenDoctor.addEventListener("click", () => {
   activatePanel("doctor");
 });
 
+fields.setupDismissPrompt.addEventListener("click", async () => {
+  currentConfig = {
+    ...currentConfig,
+    setup_prompt_dismissed: true,
+  };
+  fields.setupDismissPrompt.hidden = true;
+  try {
+    await invoke("save_config", { config: collectConfig() });
+    setStatus(tr("setupDismissed"));
+  } catch (error) {
+    currentConfig.setup_prompt_dismissed = false;
+    fields.setupDismissPrompt.hidden = false;
+    setStatus(String(error));
+  }
+});
+
 async function openPrivacyKind(privacyKind) {
   try {
     pendingPrivacyChecks.add(privacyKind);
@@ -1113,10 +1270,8 @@ fields.setupOpenPermissions.addEventListener("click", async () => {
 });
 
 fields.doctorResetPermissions.addEventListener("click", async () => {
-  if (!window.confirm(tr("resetPermissionsConfirm"))) {
-    return;
-  }
   fields.doctorResetPermissions.disabled = true;
+  setStatus(tr("resettingPermissions"));
   try {
     await invoke("reset_macos_permissions");
     pendingPrivacyChecks.add("accessibility");
@@ -1162,12 +1317,30 @@ fields.copyTestPayload.addEventListener("click", async () => {
     await invoke("copy_test_payload");
     fields.pasteTestOutput.value = "";
     fields.pasteTestOutput.focus();
+    await setPasteTestTargetActive(true);
+    renderPasteTestResult("copied");
     setStatus(tr("sampleCopied"));
   } catch (error) {
     setStatus(String(error));
   } finally {
     fields.copyTestPayload.disabled = false;
   }
+});
+
+fields.pasteTestOutput.addEventListener("focus", () => {
+  setPasteTestTargetActive(true).catch((error) => setStatus(String(error)));
+});
+
+fields.pasteTestOutput.addEventListener("blur", () => {
+  setPasteTestTargetActive(false).catch((error) => setStatus(String(error)));
+});
+
+fields.pasteTestOutput.addEventListener("input", () => {
+  evaluatePasteTestResult();
+});
+
+window.addEventListener("blur", () => {
+  setPasteTestTargetActive(false).catch((error) => setStatus(String(error)));
 });
 
 for (const button of document.querySelectorAll("[data-open-privacy]")) {

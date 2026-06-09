@@ -14,8 +14,10 @@ use std::{fs, fs::OpenOptions, io::Write};
 use std::{path::PathBuf, process::Command};
 
 use beforepaste::config::{self, Config};
+use beforepaste::detector::Detector;
 use beforepaste::lang::Lang;
 use beforepaste::protected_paste;
+use beforepaste::redact_cli;
 use beforepaste::stats;
 use beforepaste::targets::{self, CliTargetCatalogEntry, TargetCatalogEntry};
 use serde::{Deserialize, Serialize};
@@ -59,6 +61,13 @@ struct VscodeBridgeStatus {
     install_command: String,
     vsix_path: Option<String>,
     message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct TestPayloadStatus {
+    source: String,
+    redacted: String,
+    names: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -125,6 +134,7 @@ struct AppState {
     tray_menu: Mutex<Option<TrayMenuState>>,
     tray_labels: Mutex<TrayLabels>,
     tray_stats: Mutex<TrayStatsCache>,
+    paste_test_target_active: AtomicBool,
 }
 
 const TEST_PAYLOAD: &str = r#"BeforePaste test sample
@@ -146,6 +156,25 @@ fn copy_test_payload() -> Result<(), String> {
     clipboard
         .replace_text(TEST_PAYLOAD)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_test_payload_status() -> TestPayloadStatus {
+    let config = Config::load();
+    let detector = Detector::from_config(&config);
+    let (redacted, names) = redact_cli::redact_with(&detector, &config, TEST_PAYLOAD);
+    TestPayloadStatus {
+        source: TEST_PAYLOAD.to_string(),
+        redacted,
+        names,
+    }
+}
+
+#[tauri::command]
+fn set_paste_test_target(active: bool, state: State<'_, Arc<AppState>>) {
+    state
+        .paste_test_target_active
+        .store(active, Ordering::SeqCst);
 }
 
 #[tauri::command]
@@ -230,13 +259,16 @@ fn reset_macos_permissions() -> Result<(), String> {
         const BUNDLE_ID: &str = "com.beforewire.beforepaste";
         const SERVICES: &[&str] = &["Accessibility", "ListenEvent", "PostEvent", "AppleEvents"];
 
+        let mut reset_count = 0usize;
         let mut errors = Vec::new();
         for service in SERVICES {
             match Command::new("/usr/bin/tccutil")
                 .args(["reset", service, BUNDLE_ID])
                 .output()
             {
-                Ok(output) if output.status.success() => {}
+                Ok(output) if output.status.success() => {
+                    reset_count += 1;
+                }
                 Ok(output) => {
                     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
                     let detail = if stderr.is_empty() {
@@ -250,7 +282,14 @@ fn reset_macos_permissions() -> Result<(), String> {
             }
         }
 
-        if errors.is_empty() {
+        if !errors.is_empty() {
+            desktop_debug(&format!(
+                "permission reset warnings after {reset_count} successful services: {}",
+                errors.join("; ")
+            ));
+        }
+
+        if reset_count > 0 {
             Ok(())
         } else {
             Err(errors.join("; "))
@@ -283,7 +322,8 @@ fn runtime_status(app: &tauri::AppHandle, state: &Arc<AppState>) -> RuntimeStatu
         .lock()
         .ok()
         .and_then(|target| target.clone())
-        .or_else(protected_paste::current_target_reason);
+        .or_else(protected_paste::current_target_reason)
+        .or_else(|| paste_test_target_reason(state));
 
     RuntimeStatus {
         platform: platform_name().to_string(),
@@ -626,7 +666,8 @@ fn build_tray(app: &tauri::App, state: &Arc<AppState>) -> tauri::Result<()> {
 
 fn start_target_monitor(app: tauri::AppHandle, state: Arc<AppState>) {
     thread::spawn(move || loop {
-        let current = protected_paste::current_target_reason();
+        let current =
+            protected_paste::current_target_reason().or_else(|| paste_test_target_reason(&state));
         if let Ok(mut target) = state.target.lock() {
             *target = current;
         }
@@ -845,6 +886,13 @@ fn format_target_reason(reason: Option<&str>, lang: Lang) -> String {
         }
         "shortcut" => {
             if lang == Lang::ZH { "安全粘贴" } else { "Safe paste" }.to_string()
+        }
+        "test" => {
+            if lang == Lang::ZH {
+                "BeforePaste 测试框".to_string()
+            } else {
+                "BeforePaste test box".to_string()
+            }
         }
         _ => title_case(reason),
     }
@@ -1162,6 +1210,39 @@ fn automation_probe() -> bool {
     true
 }
 
+fn paste_test_target_reason(state: &Arc<AppState>) -> Option<String> {
+    if !state.paste_test_target_active.load(Ordering::SeqCst) {
+        return None;
+    }
+    if beforepaste_is_frontmost() {
+        Some("test:beforepaste".to_string())
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn beforepaste_is_frontmost() -> bool {
+    let Ok(output) = Command::new("/usr/bin/osascript")
+        .arg("-e")
+        .arg(
+            "tell application \"System Events\" to get bundle identifier of first application process whose frontmost is true",
+        )
+        .output()
+    else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+    String::from_utf8_lossy(&output.stdout).trim() == "com.beforewire.beforepaste"
+}
+
+#[cfg(not(target_os = "macos"))]
+fn beforepaste_is_frontmost() -> bool {
+    false
+}
+
 #[cfg(target_os = "macos")]
 fn start_paste_event_tap(state: Arc<AppState>) -> anyhow::Result<()> {
     use core_foundation::runloop::CFRunLoop;
@@ -1237,7 +1318,8 @@ fn start_paste_event_tap(state: Arc<AppState>) -> anyhow::Result<()> {
                         .lock()
                         .ok()
                         .and_then(|target| target.clone())
-                        .or_else(protected_paste::current_target_reason);
+                        .or_else(protected_paste::current_target_reason)
+                        .or_else(|| paste_test_target_reason(&state_for_tap));
                     if reason.is_none() {
                         desktop_debug("cmd_v pass: no target");
                         running_for_tap.store(false, Ordering::SeqCst);
@@ -1458,6 +1540,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             copy_test_payload,
+            get_test_payload_status,
+            set_paste_test_target,
             get_target_catalog,
             get_cli_target_catalog,
             get_permission_status,
@@ -1499,6 +1583,7 @@ fn main() {
                 tray_menu: Mutex::new(None),
                 tray_labels: Mutex::new(TrayLabels::default()),
                 tray_stats: Mutex::new(TrayStatsCache::default()),
+                paste_test_target_active: AtomicBool::new(false),
             });
             app.manage(Arc::clone(&state));
             install_preferences_close_handler(&app.handle().clone());
@@ -1521,8 +1606,12 @@ fn main() {
             build_tray(app, &state)?;
             update_tray_status(&app.handle().clone(), &state);
             start_target_monitor(app.handle().clone(), Arc::clone(&state));
-            if !config.onboarding_done {
+            if !config.setup_prompt_dismissed {
                 schedule_preferences_panel(app.handle().clone(), "paste");
+            } else if !config.onboarding_done {
+                schedule_preferences_panel(app.handle().clone(), "paste");
+            }
+            if !config.onboarding_done {
                 let mut next = config.clone();
                 next.onboarding_done = true;
                 if let Err(error) = next.save() {

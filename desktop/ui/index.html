@@ -60,7 +60,10 @@
                 <strong id="setup-title">Finish setup to protect paste</strong>
                 <small id="setup-copy">BeforePaste needs macOS permissions and a working shortcut before it can protect normal paste.</small>
               </span>
-              <button id="setup-open-doctor" class="bp-button bp-button-small" type="button">Open Doctor</button>
+              <div class="bp-inline-actions">
+                <button id="setup-dismiss-prompt" class="bp-button bp-button-small" type="button">Do not remind me again</button>
+                <button id="setup-open-doctor" class="bp-button bp-button-small" type="button">Open Doctor</button>
+              </div>
             </div>
             <div class="bp-setup-checks" aria-label="Setup checklist">
               <div class="bp-setup-check">
@@ -312,12 +315,28 @@
             <div class="bp-paste-test-header">
               <span>
                 <strong id="paste-test-title">Try a protected paste</strong>
-                <small id="paste-test-copy">Copy a safe sample, then use the Safe Paste shortcut in the box below to verify redaction.</small>
+                <small id="paste-test-copy">Copy a safe sample, then paste into the test box to verify redaction.</small>
               </span>
               <button id="copy-test-payload" class="bp-button bp-button-small" type="button">Copy sample</button>
             </div>
-            <textarea id="paste-test-output" class="bp-test-area" spellcheck="false" placeholder="Paste the protected sample here"></textarea>
-            <small id="paste-test-note" class="bp-test-note">Use Safe Paste here. Normal Cmd+V is only protected in detected AI targets.</small>
+            <div class="bp-test-grid">
+              <label class="bp-test-box">
+                <span id="paste-test-source-label">Sample source</span>
+                <textarea id="paste-test-source" class="bp-test-area" readonly spellcheck="false"></textarea>
+              </label>
+              <label class="bp-test-box">
+                <span id="paste-test-output-label">Paste here</span>
+                <textarea id="paste-test-output" class="bp-test-area" spellcheck="false" placeholder="Paste the protected sample here"></textarea>
+              </label>
+            </div>
+            <div id="paste-test-result" class="bp-test-result is-idle" aria-live="polite">
+              <span class="bp-test-confetti" aria-hidden="true">🎉</span>
+              <span>
+                <strong id="paste-test-result-title">Waiting for test</strong>
+                <small id="paste-test-result-copy">Copy the sample, then paste it here.</small>
+              </span>
+            </div>
+            <small id="paste-test-note" class="bp-test-note">This box is treated as a temporary BeforePaste test target, so normal Cmd+V can be verified here.</small>
           </div>
 
           <div class="bp-settings-group bp-preview-permissions">

@@ -163,6 +163,24 @@
   line-height: 1.35;
 }
 
+.bp-test-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.bp-test-box {
+  display: grid;
+  gap: 6px;
+}
+
+.bp-test-box > span {
+  color: var(--mac-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
 .bp-test-area {
   box-sizing: border-box;
   width: 100%;
@@ -178,14 +196,108 @@
   padding: 10px;
 }
 
+.bp-test-area[readonly] {
+  background:
+    linear-gradient(135deg, rgba(31, 111, 98, 0.045), transparent 50%),
+    rgba(120, 120, 128, 0.055);
+  color: rgba(60, 60, 67, 0.72);
+}
+
 .bp-test-area:focus {
   outline: none;
   box-shadow: 0 0 0 3px var(--mac-focus);
 }
 
+.bp-test-result {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+  border: 1px solid rgba(60, 60, 67, 0.14);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(120, 120, 128, 0.055);
+}
+
+.bp-test-result strong,
+.bp-test-result small {
+  display: block;
+}
+
+.bp-test-result strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bp-test-result small {
+  margin-top: 2px;
+  color: var(--mac-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.bp-test-result.is-success {
+  border-color: var(--bp-success-border);
+  background:
+    radial-gradient(circle at 20px 16px, rgba(31, 111, 98, 0.15), transparent 36px),
+    var(--bp-success-fill);
+}
+
+.bp-test-result.is-warn {
+  border-color: var(--bp-warn-border);
+  background: rgba(245, 123, 92, 0.055);
+}
+
+.bp-test-confetti {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  filter: grayscale(1);
+  transform: scale(0.96);
+}
+
+.bp-test-result.is-success .bp-test-confetti {
+  filter: none;
+  animation: bp-confetti-pop 560ms cubic-bezier(0.2, 1.4, 0.3, 1);
+}
+
+@keyframes bp-confetti-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.6) rotate(-16deg);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.12) rotate(8deg);
+  }
+  100% {
+    transform: translateY(0) scale(1) rotate(0);
+  }
+}
+
 .bp-test-note {
   display: block;
   margin-top: 8px;
+}
+
+@media (max-width: 720px) {
+  .bp-test-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bp-setup-header,
+  .bp-paste-test-header {
+    grid-template-columns: 1fr;
+  }
+
+  .bp-inline-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
 }
 
 .bp-target-list {
