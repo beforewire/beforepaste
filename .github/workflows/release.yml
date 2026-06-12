@@ -233,6 +233,19 @@ jobs:
         working-directory: desktop
         run: npm ci
 
+      - name: Use ad-hoc macOS signing on CI
+        if: runner.os == 'macOS'
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = 'desktop/src-tauri/tauri.conf.json';
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          config.bundle = config.bundle || {};
+          config.bundle.macOS = config.bundle.macOS || {};
+          config.bundle.macOS.signingIdentity = '-';
+          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+          NODE
+
       - name: Build desktop bundles
         working-directory: desktop
         run: npm run tauri -- build --bundles ${{ matrix.bundles }}
