@@ -25,7 +25,7 @@ use beforepaste::targets::{self, CliTargetCatalogEntry, TargetCatalogEntry};
 use beforepaste::{notify, updater};
 use serde::{Deserialize, Serialize};
 use tauri::image::Image;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::Emitter;
 use tauri::Manager;
@@ -85,23 +85,19 @@ struct LastProtectedPaste {
 #[derive(Clone)]
 struct TrayMenuState {
     status: MenuItem<tauri::Wry>,
-    target: MenuItem<tauri::Wry>,
     stats: MenuItem<tauri::Wry>,
-    mode_advanced: CheckMenuItem<tauri::Wry>,
-    mode_safe_only: CheckMenuItem<tauri::Wry>,
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]
 struct TrayLabels {
     status: String,
-    target: String,
     stats: String,
-    advanced_checked: bool,
 }
 
 #[derive(Clone)]
 struct TrayStatsCache {
     updated_at: u64,
+    baseline_total: u64,
     label: String,
 }
 
@@ -109,7 +105,8 @@ impl Default for TrayStatsCache {
     fn default() -> Self {
         Self {
             updated_at: 0,
-            label: "Protected 24h: 0".to_string(),
+            baseline_total: stats::read_buckets().total,
+            label: "Protected since launch: 0".to_string(),
         }
     }
 }
@@ -136,9 +133,13 @@ struct AppState {
     protect_normal_paste: AtomicBool,
     normal_paste_event_tap_started: AtomicBool,
     normal_paste_event_tap_installed: AtomicBool,
+    terminal_frontmost: AtomicBool,
+    vscode_frontmost: AtomicBool,
+    vscode_editor_frontmost: AtomicBool,
     tray_menu: Mutex<Option<TrayMenuState>>,
     tray_labels: Mutex<TrayLabels>,
     tray_stats: Mutex<TrayStatsCache>,
+    target_monitor_label: Mutex<String>,
     paste_test_target_active: AtomicBool,
 }
 
@@ -209,7 +210,10 @@ fn install_vscode_bridge(app: tauri::AppHandle) -> Result<VscodeBridgeStatus, St
         return Err("BeforePaste VS Code extension package was not found.".to_string());
     };
     let Some(code) = find_code_cli() else {
-        return Err("VS Code 'code' command was not found. Install it from VS Code Command Palette first.".to_string());
+        return Err(
+            "VS Code 'code' command was not found. Install it from VS Code Command Palette first."
+                .to_string(),
+        );
     };
     let output = Command::new(code)
         .arg("--install-extension")
@@ -241,7 +245,9 @@ fn open_privacy_settings(app: tauri::AppHandle, kind: String) -> Result<(), Stri
                 let _ = request_input_monitoring_trust_on_main_thread(&app);
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
             }
-            "automation" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
+            "automation" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
+            }
             _ => "x-apple.systempreferences:com.apple.preference.security?Privacy",
         };
         Command::new("/usr/bin/open")
@@ -400,6 +406,7 @@ fn save_config(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn set_normal_paste_mode(
     app: &tauri::AppHandle,
     state: Arc<AppState>,
@@ -431,10 +438,12 @@ fn set_normal_paste_mode(
 
 #[tauri::command]
 fn set_manual_target(kind: String) -> Result<(), String> {
-    let kind = match kind.as_str() {
-        "codex" | "claude" | "gemini" => kind,
-        _ => return Err(format!("unsupported target kind: {kind}")),
-    };
+    if !targets::cli_catalog()
+        .iter()
+        .any(|target| target.id == kind)
+    {
+        return Err(format!("unsupported target kind: {kind}"));
+    }
     write_target_snapshot(Some(format!("cli:{kind}")), 30 * 60).map_err(|e| e.to_string())
 }
 
@@ -475,6 +484,64 @@ fn open_url(url: String) -> Result<(), String> {
     open_external_url(&url)
 }
 
+#[tauri::command]
+fn open_logs() -> Result<(), String> {
+    let dir = config::ensure_base_dir();
+    let log_path = dir.join("desktop.log");
+    open_path_external(if log_path.exists() { log_path } else { dir })
+}
+
+#[tauri::command]
+fn copy_diagnostic_summary(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let config = Config::load();
+    let status = runtime_status(&app, state.inner());
+    let accessibility = status.permissions.accessibility;
+    let shortcut = status.force_paste_hotkey_registered;
+    let redaction_style = format!("{:?}", config.redact_style);
+    let summary = format!(
+        "BeforePaste diagnostic summary\nversion: {}\nplatform: {}\nbeforepaste_enabled: {}\nnormal_paste: unchanged\nsafe_paste_hotkey: {}\nsafe_paste_registered: {}\naccessibility: {}\nredaction_style: {}\nlaunch_at_login: {}\nconfig_dir: {}\n",
+        updater::current_version(),
+        status.platform,
+        status.beforepaste_enabled,
+        display_hotkey(&status.force_paste_hotkey),
+        shortcut,
+        accessibility,
+        redaction_style,
+        config.launch_at_login,
+        config::base_dir().display(),
+    );
+    let mut clipboard = beforepaste::clipboard::ClipboardMonitor::new(0)
+        .map_err(|e| format!("clipboard unavailable: {e}"))?;
+    clipboard.replace_text(&summary).map_err(|e| e.to_string())
+}
+
+fn open_path_external(path: PathBuf) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = Command::new("/usr/bin/open");
+        command.arg(path);
+        command
+    };
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("explorer.exe");
+        command.arg(path);
+        command
+    };
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let mut command = {
+        let mut command = Command::new("xdg-open");
+        command.arg(path);
+        command
+    };
+
+    command.status().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn update_status_from_info(info: &updater::LatestReleaseInfo, config: &Config) -> UpdateStatus {
     let skipped = config.skip_version.as_deref() == Some(info.tag.as_str());
     UpdateStatus {
@@ -512,7 +579,10 @@ fn start_update_check(app: tauri::AppHandle) {
             let previous_seen = config.last_seen_version.clone();
             let status = update_status_from_info(&info, &config);
             record_seen_update_version(&info.tag);
-            if info.available && !status.skipped && previous_seen.as_deref() != Some(info.tag.as_str()) {
+            if info.available
+                && !status.skipped
+                && previous_seen.as_deref() != Some(info.tag.as_str())
+            {
                 notify::update_available_notification(
                     config.notification_timeout_secs,
                     config.lang,
@@ -548,13 +618,16 @@ fn open_external_url(url: &str) -> Result<(), String> {
         cmd
     };
 
-    command.status().map_err(|e| e.to_string()).and_then(|status| {
-        if status.success() {
-            Ok(())
-        } else {
-            Err(format!("open URL exited with {status}"))
-        }
-    })
+    command
+        .status()
+        .map_err(|e| e.to_string())
+        .and_then(|status| {
+            if status.success() {
+                Ok(())
+            } else {
+                Err(format!("open URL exited with {status}"))
+            }
+        })
 }
 
 fn write_target_snapshot(reason: Option<String>, ttl_secs: u64) -> anyhow::Result<()> {
@@ -584,21 +657,104 @@ fn desktop_debug(message: &str) {
     let _ = writeln!(file, "{} {message}", now_secs());
 }
 
-fn show_preferences_panel(app: &tauri::AppHandle, panel: &str) {
+fn show_preferences_panel(app: &tauri::AppHandle, panel: &str) -> bool {
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.set_focus();
-        let _ = window.emit("beforepaste-show-panel", panel);
+        #[cfg(target_os = "macos")]
+        let activation = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+        let before_visible = window.is_visible();
+        let before_minimized = window.is_minimized();
+        let before_pos = window.outer_position();
+        let before_size = window.outer_size();
+        let unminimize = window.unminimize();
+        let cursor = window.cursor_position();
+        let primary_monitor = window.primary_monitor().ok().flatten();
+        let cursor_monitor = cursor.as_ref().ok().and_then(|position| {
+            window
+                .monitor_from_point(position.x, position.y)
+                .ok()
+                .flatten()
+        });
+        let current_monitor = window.current_monitor().ok().flatten();
+        let monitor = primary_monitor
+            .as_ref()
+            .or(cursor_monitor.as_ref())
+            .or(current_monitor.as_ref());
+        let monitor_label = monitor.as_ref().map(|monitor| {
+            format!(
+                "name={:?} work_area={:?}",
+                monitor.name(),
+                monitor.work_area()
+            )
+        });
+        let size_for_place = window.outer_size();
+        let place = match (monitor.as_ref(), size_for_place.as_ref()) {
+            (Some(monitor), Ok(size)) => {
+                let area = monitor.work_area();
+                let area_width = area.size.width as i32;
+                let area_height = area.size.height as i32;
+                let window_width = size.width as i32;
+                let window_height = size.height as i32;
+                let x_offset = if area_width > window_width {
+                    (area_width - window_width) / 2
+                } else {
+                    0
+                };
+                let y_offset = if area_height > window_height {
+                    (area_height - window_height) / 2
+                } else {
+                    0
+                };
+                window.set_position(tauri::PhysicalPosition::new(
+                    area.position.x + x_offset,
+                    area.position.y + y_offset,
+                ))
+            }
+            _ => window.center(),
+        };
+        let show = window.show();
+        // LSUIElement menu-bar apps sometimes need an explicit level bump to raise
+        // a hidden preferences window over the previously active app.
+        let raise = window.set_always_on_top(true);
+        let focus = window.set_focus();
+        let lower = window.set_always_on_top(false);
+        let after_visible = window.is_visible();
+        let after_focused = window.is_focused();
+        let after_pos = window.outer_position();
+        let after_size = window.outer_size();
+        let emit = window.emit("beforepaste-show-panel", panel);
+        let panel_js = serde_json::to_string(panel).unwrap_or_else(|_| "\"paste\"".to_string());
+        let eval = window.eval(format!(
+            "window.__beforepasteRequestedPanel = {panel_js}; try {{ window.localStorage.setItem('beforepaste:v8:last-panel', {panel_js}); }} catch (_error) {{}} window.beforepasteShowPanel && window.beforepasteShowPanel({panel_js});"
+        ));
+        #[cfg(target_os = "macos")]
+        desktop_debug(&format!(
+            "show_preferences_panel panel={panel} activation={activation:?} before_visible={before_visible:?} before_minimized={before_minimized:?} before_pos={before_pos:?} before_size={before_size:?} unminimize={unminimize:?} cursor={cursor:?} monitor={monitor_label:?} size_for_place={size_for_place:?} place={place:?} show={show:?} raise={raise:?} focus={focus:?} lower={lower:?} after_visible={after_visible:?} after_focused={after_focused:?} after_pos={after_pos:?} after_size={after_size:?} emit={emit:?} eval={eval:?}"
+        ));
+        #[cfg(not(target_os = "macos"))]
+        desktop_debug(&format!(
+            "show_preferences_panel panel={panel} before_visible={before_visible:?} before_minimized={before_minimized:?} before_pos={before_pos:?} before_size={before_size:?} unminimize={unminimize:?} cursor={cursor:?} monitor={monitor_label:?} size_for_place={size_for_place:?} place={place:?} show={show:?} raise={raise:?} focus={focus:?} lower={lower:?} after_visible={after_visible:?} after_focused={after_focused:?} after_pos={after_pos:?} after_size={after_size:?} emit={emit:?} eval={eval:?}"
+        ));
+        return show.is_ok() && focus.is_ok() && emit.is_ok();
     }
+    desktop_debug("show_preferences_panel missing main window");
+    false
 }
 
 fn schedule_preferences_panel(app: tauri::AppHandle, panel: &'static str) {
     thread::spawn(move || {
-        thread::sleep(Duration::from_millis(75));
-        show_preferences_panel(&app, panel);
+        for attempt in 1..=8 {
+            thread::sleep(Duration::from_millis(150));
+            if show_preferences_panel(&app, panel) {
+                desktop_debug(&format!(
+                    "show_preferences_panel succeeded attempt={attempt} panel={panel}"
+                ));
+                return;
+            }
+        }
     });
 }
 
+#[allow(dead_code)]
 fn schedule_normal_paste_mode(app: tauri::AppHandle, state: Arc<AppState>, protect: bool) {
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(75));
@@ -619,21 +775,26 @@ fn install_preferences_close_handler(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
+    let app_for_hide = app.clone();
     let window_for_hide = window.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
+            let app = app_for_hide.clone();
             let window = window_for_hide.clone();
             thread::spawn(move || {
                 thread::sleep(Duration::from_millis(20));
                 let _ = window.hide();
+                #[cfg(target_os = "macos")]
+                let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             });
         }
     });
 }
 
 fn tray_icon() -> Image<'static> {
-    Image::from_bytes(include_bytes!("../icons/32x32.png")).expect("BeforePaste tray icon should be a valid PNG")
+    Image::from_bytes(include_bytes!("../icons/32x32.png"))
+        .expect("BeforePaste tray icon should be a valid PNG")
 }
 
 fn tray_lang() -> Lang {
@@ -643,49 +804,46 @@ fn tray_lang() -> Lang {
 fn tray_text(lang: Lang, key: &str) -> &'static str {
     if lang == Lang::ZH {
         match key {
-            "status_checking" => "状态：检查中",
-            "last_target_checking" => "最近目标：检查中",
-            "protected_today_zero" => "近 24 小时保护：0",
+            "status_checking" => "BeforePaste · 本地检查中",
+            "safe_paste_clipboard" => "安全粘贴当前剪贴板",
             "preferences" => "设置",
-            "doctor" => "诊断",
-            "advanced_mode" => "自动保护 Cmd+V",
-            "safe_only_mode" => "只用安全粘贴快捷键",
-            "quit" => "退出",
-            "mode" => "粘贴模式",
+            "quit" => "退出 BeforePaste",
             _ => "",
         }
     } else {
         match key {
-            "status_checking" => "Status: Checking",
-            "last_target_checking" => "Last target: Checking",
-            "protected_today_zero" => "Protected 24h: 0",
+            "status_checking" => "BeforePaste · Checking locally",
+            "safe_paste_clipboard" => "Safe Paste Current Clipboard",
             "preferences" => "Preferences",
-            "doctor" => "Doctor",
-            "advanced_mode" => "Advanced - Protect Cmd+V",
-            "safe_only_mode" => "Safe Paste Shortcut Only",
-            "quit" => "Quit",
-            "mode" => "Mode",
+            "quit" => "Quit BeforePaste",
             _ => "",
         }
     }
 }
 
 fn build_tray(app: &tauri::App, state: &Arc<AppState>) -> tauri::Result<()> {
-    let lang = Config::load().lang;
-    let status = MenuItem::with_id(app, "status", tray_text(lang, "status_checking"), true, None::<&str>)?;
-    let target = MenuItem::with_id(
+    let config = Config::load();
+    let lang = config.lang;
+    let status = MenuItem::with_id(
         app,
-        "target",
-        tray_text(lang, "last_target_checking"),
+        "status",
+        tray_text(lang, "status_checking"),
         false,
         None::<&str>,
     )?;
     let stats = MenuItem::with_id(
         app,
-        "stats",
-        tray_text(lang, "protected_today_zero"),
+        "session_stats",
+        tray_stats_label(state, lang),
         false,
         None::<&str>,
+    )?;
+    let safe_paste = MenuItem::with_id(
+        app,
+        "safe_paste_clipboard",
+        tray_text(lang, "safe_paste_clipboard"),
+        true,
+        Some(config.force_paste_hotkey.as_str()),
     )?;
     let open = MenuItem::with_id(
         app,
@@ -694,71 +852,40 @@ fn build_tray(app: &tauri::App, state: &Arc<AppState>) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?;
-    let doctor = MenuItem::with_id(app, "open_doctor", tray_text(lang, "doctor"), true, None::<&str>)?;
-    let advanced = CheckMenuItem::with_id(
-        app,
-        "mode_advanced",
-        tray_text(lang, "advanced_mode"),
-        true,
-        false,
-        None::<&str>,
-    )?;
-    let safe_only = CheckMenuItem::with_id(
-        app,
-        "mode_safe_only",
-        tray_text(lang, "safe_only_mode"),
-        true,
-        false,
-        None::<&str>,
-    )?;
     let quit = MenuItem::with_id(app, "quit", tray_text(lang, "quit"), true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let separator2 = PredefinedMenuItem::separator(app)?;
-    let mode_menu =
-        Submenu::with_id_and_items(app, "mode", tray_text(lang, "mode"), true, &[&advanced, &safe_only])?;
+    let separator3 = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(
         app,
         &[
             &status,
-            &target,
             &stats,
             &separator,
-            &mode_menu,
-            &open,
-            &doctor,
+            &safe_paste,
             &separator2,
+            &open,
+            &separator3,
             &quit,
         ],
     )?;
     if let Ok(mut tray_menu) = state.tray_menu.lock() {
-        *tray_menu = Some(TrayMenuState {
-            status,
-            target,
-            stats,
-            mode_advanced: advanced,
-            mode_safe_only: safe_only,
-        });
+        *tray_menu = Some(TrayMenuState { status, stats });
     }
 
     TrayIconBuilder::with_id("main")
         .icon(tray_icon())
-        .icon_as_template(true)
+        .icon_as_template(false)
         .tooltip("BeforePaste")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(
             |app, event: tauri::menu::MenuEvent| match event.id().as_ref() {
-                "status" => schedule_preferences_panel(app.clone(), "doctor"),
+                "safe_paste_clipboard" => {
+                    let state = app.state::<Arc<AppState>>().inner().clone();
+                    handle_force_redact_paste(state);
+                }
                 "open_preferences" => schedule_preferences_panel(app.clone(), "paste"),
-                "open_doctor" => schedule_preferences_panel(app.clone(), "doctor"),
-                "mode_advanced" => {
-                    let state = app.state::<Arc<AppState>>().inner().clone();
-                    schedule_normal_paste_mode(app.clone(), state, true);
-                }
-                "mode_safe_only" => {
-                    let state = app.state::<Arc<AppState>>().inner().clone();
-                    schedule_normal_paste_mode(app.clone(), state, false);
-                }
                 "quit" => schedule_quit(app.clone()),
                 _ => {}
             },
@@ -771,12 +898,81 @@ fn start_target_monitor(app: tauri::AppHandle, state: Arc<AppState>) {
     thread::spawn(move || loop {
         let current =
             protected_paste::current_target_reason().or_else(|| paste_test_target_reason(&state));
+        let debug_snapshot = protected_paste::current_target_debug_snapshot();
+        state
+            .vscode_frontmost
+            .store(debug_snapshot_is_vscode(&debug_snapshot), Ordering::SeqCst);
+        state.terminal_frontmost.store(
+            debug_snapshot_is_terminal(&debug_snapshot),
+            Ordering::SeqCst,
+        );
+        state.vscode_editor_frontmost.store(
+            debug_snapshot_is_vscode_editor(&debug_snapshot),
+            Ordering::SeqCst,
+        );
+        log_target_monitor_change(&state, current.as_deref(), &debug_snapshot);
         if let Ok(mut target) = state.target.lock() {
             *target = current;
         }
         update_tray_status(&app, &state);
-        thread::sleep(Duration::from_millis(400));
+        thread::sleep(Duration::from_millis(200));
     });
+}
+
+fn log_target_monitor_change(state: &Arc<AppState>, current: Option<&str>, debug_snapshot: &str) {
+    let label = format!("target={} {debug_snapshot}", current.unwrap_or("none"));
+    let Ok(mut previous) = state.target_monitor_label.lock() else {
+        return;
+    };
+    if *previous == label {
+        return;
+    }
+    *previous = label.clone();
+    desktop_debug(&format!("target_monitor {label}"));
+}
+
+fn debug_snapshot_is_vscode(debug_snapshot: &str) -> bool {
+    debug_snapshot.contains("bundle=com.microsoft.VSCode")
+        || debug_snapshot.contains("bundle=com.microsoft.VSCodeInsiders")
+        || debug_snapshot.contains("bundle=com.visualstudio.code.oss")
+}
+
+fn debug_snapshot_is_vscode_editor(debug_snapshot: &str) -> bool {
+    debug_snapshot_is_vscode(debug_snapshot)
+        && debug_snapshot_vscode_surface(debug_snapshot) == Some("editor")
+        && debug_snapshot_vscode_terminal_target(debug_snapshot).is_none()
+}
+
+fn debug_snapshot_is_ambiguous_vscode_editor(debug_snapshot: &str) -> bool {
+    debug_snapshot_is_vscode(debug_snapshot)
+        && debug_snapshot_vscode_surface(debug_snapshot) == Some("editor")
+        && debug_snapshot_vscode_terminal_target(debug_snapshot).is_some()
+}
+
+fn debug_snapshot_vscode_surface(debug_snapshot: &str) -> Option<&str> {
+    let (_, value) = debug_snapshot.split_once("vscode_surface=")?;
+    value.split_whitespace().next()
+}
+
+fn debug_snapshot_vscode_terminal_target(debug_snapshot: &str) -> Option<&str> {
+    let (_, value) = debug_snapshot.split_once("vscode_terminal_target=")?;
+    let target = value.split_whitespace().next()?.trim();
+    if target.is_empty() || target == "none" {
+        None
+    } else {
+        Some(target)
+    }
+}
+
+fn debug_snapshot_is_terminal(debug_snapshot: &str) -> bool {
+    debug_snapshot.contains("bundle=com.mitchellh.ghostty")
+        || debug_snapshot.contains("bundle=com.googlecode.iterm2")
+        || debug_snapshot.contains("bundle=com.apple.Terminal")
+        || debug_snapshot.contains("bundle=net.kovidgoyal.kitty")
+        || debug_snapshot.contains("bundle=com.github.wez.wezterm")
+        || debug_snapshot.contains("bundle=dev.warp.Warp-Stable")
+        || debug_snapshot.contains("bundle=io.alacritty")
+        || debug_snapshot.contains("bundle=co.zeit.hyper")
 }
 
 fn update_tray_status(app: &tauri::AppHandle, state: &Arc<AppState>) {
@@ -802,15 +998,13 @@ fn update_tray_status(app: &tauri::AppHandle, state: &Arc<AppState>) {
     };
 
     let _ = items.status.set_text(&labels.status);
-    let _ = items.target.set_text(&labels.target);
     let _ = items.stats.set_text(&labels.stats);
-    let _ = items.mode_advanced.set_checked(labels.advanced_checked);
-    let _ = items.mode_safe_only.set_checked(!labels.advanced_checked);
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_tooltip(Some(labels.status.as_str()));
     }
 }
 
+#[allow(dead_code)]
 fn schedule_tray_status_update(app: tauri::AppHandle, state: Arc<AppState>, delay: Duration) {
     thread::spawn(move || {
         thread::sleep(delay);
@@ -818,22 +1012,46 @@ fn schedule_tray_status_update(app: tauri::AppHandle, state: Arc<AppState>, dela
     });
 }
 
+#[allow(dead_code)]
 fn tray_labels(status: &RuntimeStatus, state: &Arc<AppState>) -> TrayLabels {
     let lang = tray_lang();
-    let target = format_target_reason(status.current_target.as_deref(), lang);
-    let cmdv = cmdv_status_label(status, lang);
     let safe = safe_paste_status_label(status, lang);
-    let status_label = overall_status_label(status, &cmdv, &safe, lang);
+    let status_label = simple_safe_paste_status_label(status, &safe, lang);
     let stats = tray_stats_label(state, lang);
     TrayLabels {
         status: status_label,
-        target: if lang == Lang::ZH {
-            format!("最近目标：{target}")
-        } else {
-            format!("Last target: {target}")
-        },
         stats,
-        advanced_checked: status.platform == "macos" && status.protect_normal_paste,
+    }
+}
+
+fn simple_safe_paste_status_label(status: &RuntimeStatus, safe: &str, lang: Lang) -> String {
+    if !status.beforepaste_enabled {
+        return if lang == Lang::ZH {
+            "BeforePaste · 关闭".to_string()
+        } else {
+            "BeforePaste · Off".to_string()
+        };
+    }
+    if (lang == Lang::ZH && safe.contains("缺少权限"))
+        || (lang != Lang::ZH && safe.contains("Missing"))
+    {
+        return if lang == Lang::ZH {
+            format!("BeforePaste · {safe}")
+        } else {
+            format!("BeforePaste · {safe}")
+        };
+    }
+    if !status.force_paste_hotkey_registered {
+        return if lang == Lang::ZH {
+            "BeforePaste · 快捷键异常".to_string()
+        } else {
+            "BeforePaste · Shortcut needs attention".to_string()
+        };
+    }
+    if lang == Lang::ZH {
+        "BeforePaste · 本地保护就绪".to_string()
+    } else {
+        "BeforePaste · Local guard ready".to_string()
     }
 }
 
@@ -851,14 +1069,16 @@ fn tray_stats_label(state: &Arc<AppState>, lang: Lang) -> String {
     }
     let buckets = stats::read_buckets();
     cache.updated_at = now;
+    let protected_since_launch = buckets.total.saturating_sub(cache.baseline_total);
     cache.label = if lang == Lang::ZH {
-        format!("近 24 小时保护：{}", buckets.last_24h)
+        format!("本次启动保护：{protected_since_launch}")
     } else {
-        format!("Protected 24h: {}", buckets.last_24h)
+        format!("Protected since launch: {protected_since_launch}")
     };
     cache.label.clone()
 }
 
+#[allow(dead_code)]
 fn overall_status_label(status: &RuntimeStatus, cmdv: &str, safe: &str, lang: Lang) -> String {
     if !status.beforepaste_enabled {
         return if lang == Lang::ZH {
@@ -922,22 +1142,41 @@ fn overall_status_label(status: &RuntimeStatus, cmdv: &str, safe: &str, lang: La
     }
 }
 
+#[allow(dead_code)]
 fn cmdv_status_label(status: &RuntimeStatus, lang: Lang) -> String {
     if !status.beforepaste_enabled {
-        return if lang == Lang::ZH { "未启用" } else { "Disabled" }.to_string();
+        return if lang == Lang::ZH {
+            "未启用"
+        } else {
+            "Disabled"
+        }
+        .to_string();
     }
     if status.platform != "macos" {
-        return if lang == Lang::ZH { "不支持" } else { "Not supported" }.to_string();
+        return if lang == Lang::ZH {
+            "不支持"
+        } else {
+            "Not supported"
+        }
+        .to_string();
     }
     if !status.protect_normal_paste {
         return if lang == Lang::ZH { "关闭" } else { "Off" }.to_string();
     }
     let mut missing = Vec::new();
     if !status.permissions.accessibility {
-        missing.push(if lang == Lang::ZH { "辅助功能" } else { "Accessibility" });
+        missing.push(if lang == Lang::ZH {
+            "辅助功能"
+        } else {
+            "Accessibility"
+        });
     }
     if !status.permissions.input_monitoring {
-        missing.push(if lang == Lang::ZH { "输入监控" } else { "Input Monitoring" });
+        missing.push(if lang == Lang::ZH {
+            "输入监控"
+        } else {
+            "Input Monitoring"
+        });
     }
     if !missing.is_empty() {
         return if lang == Lang::ZH {
@@ -948,9 +1187,19 @@ fn cmdv_status_label(status: &RuntimeStatus, lang: Lang) -> String {
     }
     if !status.normal_paste_event_tap_installed {
         return if status.normal_paste_event_tap_started {
-            if lang == Lang::ZH { "正在恢复" } else { "Installing" }.to_string()
+            if lang == Lang::ZH {
+                "正在恢复"
+            } else {
+                "Installing"
+            }
+            .to_string()
         } else {
-            if lang == Lang::ZH { "需要重启" } else { "Restart Required" }.to_string()
+            if lang == Lang::ZH {
+                "需要重启"
+            } else {
+                "Restart Required"
+            }
+            .to_string()
         };
     }
     if lang == Lang::ZH { "就绪" } else { "Ready" }.to_string()
@@ -958,7 +1207,12 @@ fn cmdv_status_label(status: &RuntimeStatus, lang: Lang) -> String {
 
 fn safe_paste_status_label(status: &RuntimeStatus, lang: Lang) -> String {
     if !status.beforepaste_enabled {
-        return if lang == Lang::ZH { "未启用" } else { "Disabled" }.to_string();
+        return if lang == Lang::ZH {
+            "未启用"
+        } else {
+            "Disabled"
+        }
+        .to_string();
     }
     if status.platform == "macos" && !status.permissions.accessibility {
         return if lang == Lang::ZH {
@@ -984,9 +1238,15 @@ fn safe_paste_status_label(status: &RuntimeStatus, lang: Lang) -> String {
     }
 }
 
+#[allow(dead_code)]
 fn format_target_reason(reason: Option<&str>, lang: Lang) -> String {
     let Some(reason) = reason else {
-        return if lang == Lang::ZH { "当前不是 AI 目标" } else { "Not AI target" }.to_string();
+        return if lang == Lang::ZH {
+            "当前不是 AI 目标"
+        } else {
+            "Not AI target"
+        }
+        .to_string();
     };
     let mut parts = reason.split(':');
     let source = parts.next().unwrap_or_default();
@@ -1007,9 +1267,12 @@ fn format_target_reason(reason: Option<&str>, lang: Lang) -> String {
                 format!("{} web", target_label(kind))
             }
         }
-        "shortcut" => {
-            if lang == Lang::ZH { "安全粘贴" } else { "Safe paste" }.to_string()
+        "shortcut" => if lang == Lang::ZH {
+            "安全粘贴"
+        } else {
+            "Safe paste"
         }
+        .to_string(),
         "test" => {
             if lang == Lang::ZH {
                 "BeforePaste 测试框".to_string()
@@ -1021,6 +1284,7 @@ fn format_target_reason(reason: Option<&str>, lang: Lang) -> String {
     }
 }
 
+#[allow(dead_code)]
 fn target_label(kind: &str) -> String {
     targets::catalog()
         .iter()
@@ -1029,6 +1293,7 @@ fn target_label(kind: &str) -> String {
         .unwrap_or_else(|| title_case(kind))
 }
 
+#[allow(dead_code)]
 fn title_case(value: &str) -> String {
     value
         .split([' ', '_', '-'])
@@ -1087,7 +1352,9 @@ fn request_input_monitoring_trust_on_main_thread(app: &tauri::AppHandle) -> Resu
         let _ = tx.send(request_input_monitoring_trust());
     })
     .map_err(|e| e.to_string())?;
-    Ok(rx.recv_timeout(Duration::from_millis(1200)).unwrap_or(false))
+    Ok(rx
+        .recv_timeout(Duration::from_millis(1200))
+        .unwrap_or(false))
 }
 
 #[cfg(target_os = "macos")]
@@ -1200,9 +1467,11 @@ fn vscode_bridge_status(app: Option<&tauri::AppHandle>) -> VscodeBridgeStatus {
     let message = if installed {
         "BeforePaste VS Code extension is installed.".to_string()
     } else if vsix_path.is_some() {
-        "Install the BeforePaste VS Code extension to detect AI CLIs in integrated terminals.".to_string()
+        "Install the BeforePaste VS Code extension to detect AI CLIs in integrated terminals."
+            .to_string()
     } else {
-        "BeforePaste VS Code extension is not installed, and the local .vsix package was not found.".to_string()
+        "BeforePaste VS Code extension is not installed, and the local .vsix package was not found."
+            .to_string()
     };
     VscodeBridgeStatus {
         installed,
@@ -1481,26 +1750,48 @@ fn start_paste_event_tap(state: Arc<AppState>) -> anyhow::Result<()> {
                         return CallbackResult::Drop;
                     }
 
-                    let reason = state_for_tap
+                    // Keep the event-tap callback fast. Running target detection here can
+                    // invoke AppleScript/AX and cause macOS to disable or bypass the tap.
+                    let mut reason = state_for_tap
                         .target
                         .lock()
                         .ok()
                         .and_then(|target| target.clone())
-                        .or_else(protected_paste::current_target_reason)
                         .or_else(|| paste_test_target_reason(&state_for_tap));
-                    if reason.is_none() {
-                        desktop_debug("cmd_v pass: no target");
+                    if state_for_tap.vscode_editor_frontmost.load(Ordering::SeqCst) {
+                        if protected_paste::pending_clipboard_restore_active() {
+                            desktop_debug("cmd_v drop: vscode editor pending restore");
+                            reason = None;
+                        } else {
+                            desktop_debug("cmd_v pass: vscode editor");
+                            running_for_tap.store(false, Ordering::SeqCst);
+                            return CallbackResult::Keep;
+                        }
+                    }
+                    let probe_vscode = reason.is_none()
+                        && state_for_tap.vscode_frontmost.load(Ordering::SeqCst);
+                    let probe_terminal = reason.is_none()
+                        && state_for_tap.terminal_frontmost.load(Ordering::SeqCst);
+                    if reason.is_none() && !probe_vscode && !probe_terminal {
+                        desktop_debug("cmd_v pass: no cached target");
                         running_for_tap.store(false, Ordering::SeqCst);
                         return CallbackResult::Keep;
                     }
-                    desktop_debug(&format!(
-                        "cmd_v drop: protected paste target={}",
-                        reason.as_deref().unwrap_or("unknown")
-                    ));
+                    if probe_vscode {
+                        desktop_debug("cmd_v drop: vscode live probe");
+                    } else if probe_terminal {
+                        desktop_debug("cmd_v drop: terminal live probe");
+                    } else {
+                        desktop_debug(&format!(
+                            "cmd_v drop: protected paste target={}",
+                            reason.as_deref().unwrap_or("unknown")
+                        ));
+                    }
 
                     let state_for_paste = Arc::clone(&state_for_tap);
                     let running_for_paste = Arc::clone(&running_for_tap);
                     thread::spawn(move || {
+                        let reason = revalidate_paste_target(reason, &state_for_paste);
                         let result = state_for_paste
                             .engine
                             .lock()
@@ -1509,7 +1800,7 @@ fn start_paste_event_tap(state: Arc<AppState>) -> anyhow::Result<()> {
                         if let Err(error) = result {
                             eprintln!("BeforePaste protected paste failed: {error}");
                         }
-                        thread::sleep(Duration::from_millis(1000));
+                        thread::sleep(Duration::from_millis(80));
                         running_for_paste.store(false, Ordering::SeqCst);
                     });
                     CallbackResult::Drop
@@ -1545,6 +1836,243 @@ fn start_paste_event_tap(state: Arc<AppState>) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn revalidate_paste_target(cached_reason: Option<String>, state: &Arc<AppState>) -> Option<String> {
+    if cached_reason
+        .as_deref()
+        .is_some_and(|reason| reason.starts_with("test:"))
+    {
+        return cached_reason;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(cached_reason_value) = cached_reason.clone() {
+            let debug_snapshot = protected_paste::current_target_debug_snapshot();
+            if debug_snapshot_is_vscode(&debug_snapshot) {
+                if debug_snapshot_is_vscode_editor(&debug_snapshot) {
+                    desktop_debug(&format!(
+                        "cmd_v revalidate: cached={cached_reason_value} live=none {debug_snapshot}"
+                    ));
+                    return None;
+                }
+                if debug_snapshot_is_ambiguous_vscode_editor(&debug_snapshot) {
+                    return revalidate_ambiguous_vscode_editor(
+                        Some(cached_reason_value),
+                        state,
+                        debug_snapshot,
+                    );
+                }
+                if let Some(reason) = vscode_ai_view_reason_from_debug(&debug_snapshot) {
+                    if reason != cached_reason_value {
+                        desktop_debug(&format!(
+                            "cmd_v revalidate: recovered {reason} from {debug_snapshot}"
+                        ));
+                    }
+                    return Some(reason);
+                }
+                if let Some(reason) = vscode_terminal_reason_from_debug(&debug_snapshot) {
+                    return Some(reason);
+                }
+                if debug_snapshot_vscode_surface(&debug_snapshot) == Some("terminal") {
+                    return Some(cached_reason_value);
+                }
+                desktop_debug(&format!(
+                    "cmd_v revalidate: cached={cached_reason_value} live=none {debug_snapshot}"
+                ));
+                return None;
+            }
+
+            if debug_snapshot_is_terminal(&debug_snapshot) {
+                // Repeated AI-terminal pastes should be fast. The monitor refreshes the
+                // cached target continuously; use this bundle check only to avoid leaking
+                // a stale terminal target into browsers/editors.
+                return Some(cached_reason_value);
+            }
+
+            desktop_debug(&format!(
+                "cmd_v revalidate: cached={cached_reason_value} live=none {debug_snapshot}"
+            ));
+            return None;
+        }
+
+        if state.vscode_frontmost.load(Ordering::SeqCst) {
+            let debug_snapshot = protected_paste::current_target_debug_snapshot();
+            if debug_snapshot_is_vscode(&debug_snapshot) {
+                if debug_snapshot_is_vscode_editor(&debug_snapshot) {
+                    return None;
+                }
+                if debug_snapshot_is_ambiguous_vscode_editor(&debug_snapshot) {
+                    return revalidate_ambiguous_vscode_editor(None, state, debug_snapshot);
+                }
+                if let Some(reason) = vscode_ai_view_reason_from_debug(&debug_snapshot)
+                    .or_else(|| vscode_terminal_reason_from_debug(&debug_snapshot))
+                {
+                    desktop_debug(&format!(
+                        "cmd_v revalidate: recovered {reason} from {debug_snapshot}"
+                    ));
+                    return Some(reason);
+                }
+                desktop_debug(&format!("cmd_v revalidate: live=none {debug_snapshot}"));
+                return None;
+            }
+        }
+
+        let live_reason = protected_paste::current_target_reason();
+        if let Some(reason) = live_reason {
+            if cached_reason.as_deref() != Some(reason.as_str()) {
+                desktop_debug(&format!(
+                    "cmd_v revalidate: cached={} live={}",
+                    cached_reason.as_deref().unwrap_or("none"),
+                    reason
+                ));
+            }
+            return Some(reason);
+        }
+
+        let debug_snapshot = protected_paste::current_target_debug_snapshot();
+        if debug_snapshot_is_vscode(&debug_snapshot) {
+            if debug_snapshot_is_vscode_editor(&debug_snapshot) {
+                if let Some(cached_reason) = cached_reason.as_deref() {
+                    desktop_debug(&format!(
+                        "cmd_v revalidate: cached={cached_reason} live=none {debug_snapshot}"
+                    ));
+                }
+                return None;
+            }
+            if debug_snapshot_is_ambiguous_vscode_editor(&debug_snapshot) {
+                return revalidate_ambiguous_vscode_editor(cached_reason, state, debug_snapshot);
+            }
+            if let Some(reason) = vscode_ai_view_reason_from_debug(&debug_snapshot) {
+                desktop_debug(&format!(
+                    "cmd_v revalidate: recovered {reason} from {debug_snapshot}"
+                ));
+                return Some(reason);
+            }
+            if let Some(reason) = vscode_terminal_reason_from_debug(&debug_snapshot) {
+                desktop_debug(&format!(
+                    "cmd_v revalidate: recovered {reason} from {debug_snapshot}"
+                ));
+                return Some(reason);
+            }
+            desktop_debug(&format!("cmd_v revalidate: live=none {debug_snapshot}"));
+            return None;
+        }
+
+        if let Some(cached_reason) = cached_reason {
+            desktop_debug(&format!(
+                "cmd_v revalidate: cached={cached_reason} live=none {debug_snapshot}"
+            ));
+        }
+        None
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        cached_reason
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn revalidate_ambiguous_vscode_editor(
+    cached_reason: Option<String>,
+    _state: &Arc<AppState>,
+    initial_debug_snapshot: String,
+) -> Option<String> {
+    const RETRY_DELAYS_MS: [u64; 3] = [0, 60, 120];
+
+    for delay_ms in RETRY_DELAYS_MS {
+        if delay_ms > 0 {
+            thread::sleep(Duration::from_millis(delay_ms));
+        }
+
+        if let Some(reason) = protected_paste::current_detected_target_reason() {
+            desktop_debug(&format!(
+                "cmd_v revalidate: recovered {reason} from ambiguous vscode editor initial={initial_debug_snapshot}"
+            ));
+            return Some(reason);
+        }
+
+        let debug_snapshot = protected_paste::current_target_debug_snapshot();
+        if let Some(reason) = vscode_ai_view_reason_from_debug(&debug_snapshot)
+            .or_else(|| vscode_terminal_reason_from_debug(&debug_snapshot))
+        {
+            desktop_debug(&format!(
+                "cmd_v revalidate: recovered {reason} from {debug_snapshot}"
+            ));
+            return Some(reason);
+        }
+
+        if debug_snapshot_is_vscode_editor(&debug_snapshot) {
+            continue;
+        }
+        if !debug_snapshot_is_ambiguous_vscode_editor(&debug_snapshot) {
+            break;
+        }
+    }
+
+    if let Some(cached_reason) = cached_reason.as_deref() {
+        desktop_debug(&format!(
+            "cmd_v revalidate: cached={cached_reason} live=none ambiguous {initial_debug_snapshot}"
+        ));
+    } else {
+        desktop_debug(&format!(
+            "cmd_v revalidate: live=none ambiguous {initial_debug_snapshot}"
+        ));
+    }
+    None
+}
+
+fn vscode_ai_view_reason_from_debug(debug_snapshot: &str) -> Option<String> {
+    let (_, value) = debug_snapshot.split_once("vscode_surface=ai-view:")?;
+    let kind = value.split_whitespace().next()?.trim();
+    if kind.is_empty() {
+        None
+    } else {
+        Some(format!("cli:{kind}"))
+    }
+}
+
+fn vscode_terminal_reason_from_debug(debug_snapshot: &str) -> Option<String> {
+    if !debug_snapshot_is_vscode(debug_snapshot)
+        || debug_snapshot_vscode_surface(debug_snapshot) != Some("terminal")
+    {
+        return None;
+    }
+    debug_snapshot_vscode_terminal_target(debug_snapshot).map(|kind| format!("cli:{kind}"))
+}
+
+#[cfg(test)]
+mod target_snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn vscode_editor_is_unambiguous_only_without_terminal_target() {
+        let editor =
+            "bundle=com.microsoft.VSCode vscode_surface=editor vscode_terminal_target=none";
+        assert!(debug_snapshot_is_vscode_editor(editor));
+        assert!(!debug_snapshot_is_ambiguous_vscode_editor(editor));
+
+        let ambiguous =
+            "bundle=com.microsoft.VSCode vscode_surface=editor vscode_terminal_target=codex";
+        assert!(!debug_snapshot_is_vscode_editor(ambiguous));
+        assert!(debug_snapshot_is_ambiguous_vscode_editor(ambiguous));
+    }
+
+    #[test]
+    fn recovers_vscode_terminal_reason_only_from_terminal_surface() {
+        let terminal =
+            "bundle=com.microsoft.VSCode vscode_surface=terminal vscode_terminal_target=codex";
+        assert_eq!(
+            vscode_terminal_reason_from_debug(terminal).as_deref(),
+            Some("cli:codex")
+        );
+
+        let editor =
+            "bundle=com.microsoft.VSCode vscode_surface=editor vscode_terminal_target=codex";
+        assert!(vscode_terminal_reason_from_debug(editor).is_none());
+    }
+}
+
 #[cfg(not(target_os = "macos"))]
 fn start_paste_event_tap(_state: Arc<AppState>) -> anyhow::Result<()> {
     Ok(())
@@ -1574,6 +2102,11 @@ fn handle_force_redact_paste(state: Arc<AppState>) {
             .lock()
             .map_err(|_| anyhow::anyhow!("engine cache lock poisoned"))
             .and_then(|mut engine| engine.paste_force_redact());
+        if result.is_ok() {
+            if let Ok(mut cache) = state.tray_stats.lock() {
+                cache.updated_at = 0;
+            }
+        }
         if let Err(error) = result {
             eprintln!("BeforePaste force-redact paste failed: {error}");
         }
@@ -1624,7 +2157,8 @@ fn sync_launch_at_login(enabled: bool) -> anyhow::Result<()> {
 
     if enabled {
         let exe = std::env::current_exe()?;
-        let plist_body = launch_agent_plist(&exe.to_string_lossy());
+        let program_args = launch_agent_program_arguments(&exe);
+        let plist_body = launch_agent_plist(&program_args);
         if let Some(parent) = plist.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -1658,8 +2192,40 @@ fn launch_agent_path() -> anyhow::Result<PathBuf> {
 }
 
 #[cfg(target_os = "macos")]
-fn launch_agent_plist(program: &str) -> String {
-    let program = escape_plist(program);
+fn launch_agent_program_arguments(exe: &std::path::Path) -> Vec<String> {
+    if let Some(app_bundle) = app_bundle_path_from_exe(exe) {
+        return vec![
+            "/usr/bin/open".to_string(),
+            app_bundle.to_string_lossy().into_owned(),
+        ];
+    }
+    vec![exe.to_string_lossy().into_owned()]
+}
+
+#[cfg(target_os = "macos")]
+fn app_bundle_path_from_exe(exe: &std::path::Path) -> Option<PathBuf> {
+    let macos_dir = exe.parent()?;
+    if macos_dir.file_name()? != "MacOS" {
+        return None;
+    }
+    let contents_dir = macos_dir.parent()?;
+    if contents_dir.file_name()? != "Contents" {
+        return None;
+    }
+    let app_bundle = contents_dir.parent()?;
+    if app_bundle.extension()? != "app" {
+        return None;
+    }
+    Some(app_bundle.to_path_buf())
+}
+
+#[cfg(target_os = "macos")]
+fn launch_agent_plist(program_args: &[String]) -> String {
+    let program_args = program_args
+        .iter()
+        .map(|arg| format!("    <string>{}</string>", escape_plist(arg)))
+        .collect::<Vec<_>>()
+        .join("\n");
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1669,7 +2235,7 @@ fn launch_agent_plist(program: &str) -> String {
   <string>com.beforewire.beforepaste</string>
   <key>ProgramArguments</key>
   <array>
-    <string>{program}</string>
+{program_args}
   </array>
   <key>RunAtLoad</key>
   <true/>
@@ -1692,6 +2258,7 @@ fn escape_plist(value: &str) -> String {
 }
 
 fn main() {
+    desktop_debug("main starting");
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -1723,10 +2290,35 @@ fn main() {
             clear_manual_target,
             check_for_update,
             skip_update_version,
-            open_url
+            open_url,
+            open_logs,
+            copy_diagnostic_summary
         ])
         .setup(|app| {
-            let config = Config::load();
+            let mut config = Config::load();
+            let should_open_preferences = !config.onboarding_done;
+            let mut config_changed = false;
+            if config.protect_normal_paste {
+                config.protect_normal_paste = false;
+                config_changed = true;
+            }
+            if config.redact_style == config::RedactStyle::Marker {
+                config.redact_style = config::RedactStyle::Typed;
+                config_changed = true;
+            }
+            if !config.setup_prompt_dismissed {
+                config.setup_prompt_dismissed = true;
+                config_changed = true;
+            }
+            if !config.onboarding_done {
+                config.onboarding_done = true;
+                config_changed = true;
+            }
+            if config_changed {
+                if let Err(error) = config.save() {
+                    eprintln!("BeforePaste failed to persist desktop defaults: {error}");
+                }
+            }
             let permissions = permission_status();
             desktop_debug(&format!(
                 "permissions accessibility={} input_monitoring={} event_posting={} automation={}",
@@ -1735,9 +2327,9 @@ fn main() {
                 permissions.event_posting,
                 permissions.automation
             ));
-            if !request_accessibility_trust() {
+            if !permissions.accessibility {
                 eprintln!(
-                    "BeforePaste is waiting for macOS Accessibility permission; protected paste shortcuts may not paste until it is granted."
+                    "BeforePaste is waiting for macOS Accessibility permission; Safe Paste may not paste until it is granted."
                 );
             }
             let state = Arc::new(AppState {
@@ -1750,9 +2342,13 @@ fn main() {
                 protect_normal_paste: AtomicBool::new(config.protect_normal_paste),
                 normal_paste_event_tap_started: AtomicBool::new(false),
                 normal_paste_event_tap_installed: AtomicBool::new(false),
+                terminal_frontmost: AtomicBool::new(false),
+                vscode_frontmost: AtomicBool::new(false),
+                vscode_editor_frontmost: AtomicBool::new(false),
                 tray_menu: Mutex::new(None),
                 tray_labels: Mutex::new(TrayLabels::default()),
                 tray_stats: Mutex::new(TrayStatsCache::default()),
+                target_monitor_label: Mutex::new(String::new()),
                 paste_test_target_active: AtomicBool::new(false),
             });
             app.manage(Arc::clone(&state));
@@ -1773,19 +2369,17 @@ fn main() {
                     error
                 })?;
             }
-            build_tray(app, &state)?;
+            desktop_debug("building tray");
+            build_tray(app, &state).map_err(|error| {
+                desktop_debug(&format!("build_tray failed: {error}"));
+                error
+            })?;
+            desktop_debug("tray built");
             update_tray_status(&app.handle().clone(), &state);
             start_target_monitor(app.handle().clone(), Arc::clone(&state));
             start_update_check(app.handle().clone());
-            if !config.setup_prompt_dismissed || !config.onboarding_done {
+            if should_open_preferences {
                 schedule_preferences_panel(app.handle().clone(), "paste");
-            }
-            if !config.onboarding_done {
-                let mut next = config.clone();
-                next.onboarding_done = true;
-                if let Err(error) = next.save() {
-                    eprintln!("BeforePaste failed to mark onboarding as shown: {error}");
-                }
             }
             Ok(())
         })
@@ -1797,10 +2391,7 @@ fn main() {
 mod tests {
     use super::*;
 
-    fn runtime_status(
-        permissions: PermissionStatus,
-        protect_normal_paste: bool,
-    ) -> RuntimeStatus {
+    fn runtime_status(permissions: PermissionStatus, protect_normal_paste: bool) -> RuntimeStatus {
         RuntimeStatus {
             platform: "macos".to_string(),
             permissions,
@@ -1854,5 +2445,41 @@ mod tests {
             overall_status_label(&status, &cmdv, &safe, Lang::ZH),
             "BeforePaste：缺少权限：辅助功能 + 输入监控"
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn app_bundle_path_is_derived_from_macos_executable() {
+        let exe = std::path::Path::new(
+            "/Applications/BeforePaste.app/Contents/MacOS/beforepaste-desktop",
+        );
+        assert_eq!(
+            app_bundle_path_from_exe(exe),
+            Some(PathBuf::from("/Applications/BeforePaste.app"))
+        );
+        assert_eq!(
+            app_bundle_path_from_exe(std::path::Path::new("/usr/bin/true")),
+            None
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn launch_agent_opens_app_bundle_instead_of_raw_executable() {
+        let exe = std::path::Path::new(
+            "/Applications/BeforePaste.app/Contents/MacOS/beforepaste-desktop",
+        );
+        let args = launch_agent_program_arguments(exe);
+        assert_eq!(
+            args,
+            vec![
+                "/usr/bin/open".to_string(),
+                "/Applications/BeforePaste.app".to_string()
+            ]
+        );
+        let plist = launch_agent_plist(&args);
+        assert!(plist.contains("<string>/usr/bin/open</string>"));
+        assert!(plist.contains("<string>/Applications/BeforePaste.app</string>"));
+        assert!(!plist.contains("beforepaste-desktop</string>"));
     }
 }

@@ -143,6 +143,14 @@ fn render_zsh_hook(binaries: &[&str], beforepaste_exe: &str, title_mode: TitleMo
          \t\t\t__beforepaste_terminal_id=\"$_ps_terminal_id\"\n\
          \t\tfi\n\
          \tfi\n\
+         \tif [[ ( \"${{TERM_PROGRAM:-}}\" == \"iTerm.app\" || \"${{LC_TERMINAL:-}}\" == \"iTerm2\" ) && -x /usr/bin/osascript ]]; then\n\
+         \t\tlocal _ps_terminal_id\n\
+         \t\t_ps_terminal_id=$(/usr/bin/osascript -e 'tell application \"iTerm2\" to get unique id of current session of current window' 2>/dev/null) || _ps_terminal_id=\"\"\n\
+         \t\tif [[ -n \"$_ps_terminal_id\" ]]; then\n\
+         \t\t\t__beforepaste_terminal_app=\"iterm2\"\n\
+         \t\t\t__beforepaste_terminal_id=\"$_ps_terminal_id\"\n\
+         \t\tfi\n\
+         \tfi\n\
          }}\n\
          _beforepaste_write_target() {{\n\
          \tlocal -a _ps_identity_args\n\
@@ -255,6 +263,14 @@ fn render_bash_hook(binaries: &[&str], beforepaste_exe: &str, title_mode: TitleM
          \t\t\t__beforepaste_terminal_id=\"$_ps_terminal_id\"\n\
          \t\tfi\n\
          \tfi\n\
+         \tif [[ ( \"${{TERM_PROGRAM:-}}\" == \"iTerm.app\" || \"${{LC_TERMINAL:-}}\" == \"iTerm2\" ) && -x /usr/bin/osascript ]]; then\n\
+         \t\tlocal _ps_terminal_id\n\
+         \t\t_ps_terminal_id=$(/usr/bin/osascript -e 'tell application \"iTerm2\" to get unique id of current session of current window' 2>/dev/null) || _ps_terminal_id=\"\"\n\
+         \t\tif [[ -n \"$_ps_terminal_id\" ]]; then\n\
+         \t\t\t__beforepaste_terminal_app=\"iterm2\"\n\
+         \t\t\t__beforepaste_terminal_id=\"$_ps_terminal_id\"\n\
+         \t\tfi\n\
+         \tfi\n\
          }}\n\
          __beforepaste_write_target() {{\n\
          \tlocal _ps_identity_args=()\n\
@@ -359,6 +375,13 @@ fn render_fish_hook(binaries: &[&str], beforepaste_exe: &str, title_mode: TitleM
          \t\tset -l _ps_terminal_id (/usr/bin/osascript -e 'tell application \"Ghostty\" to get id of focused terminal of selected tab of front window' 2>/dev/null)\n\
          \t\tif test -n \"$_ps_terminal_id\"\n\
          \t\t\tset -g __beforepaste_terminal_app ghostty\n\
+         \t\t\tset -g __beforepaste_terminal_id \"$_ps_terminal_id\"\n\
+         \t\tend\n\
+         \tend\n\
+         \tif set -q TERM_PROGRAM; and test \"$TERM_PROGRAM\" = iTerm.app; and test -x /usr/bin/osascript\n\
+         \t\tset -l _ps_terminal_id (/usr/bin/osascript -e 'tell application \"iTerm2\" to get unique id of current session of current window' 2>/dev/null)\n\
+         \t\tif test -n \"$_ps_terminal_id\"\n\
+         \t\t\tset -g __beforepaste_terminal_app iterm2\n\
          \t\t\tset -g __beforepaste_terminal_id \"$_ps_terminal_id\"\n\
          \t\tend\n\
          \tend\n\
@@ -514,6 +537,7 @@ mod tests {
         assert!(s.contains("__beforepaste_ai_bins=('claude' 'codex')"));
         assert!(s.contains("command '/tmp/beforepaste' terminal-enter"));
         assert!(s.contains("command '/tmp/beforepaste' terminal-leave"));
+        assert!(s.contains("__beforepaste_terminal_app=\"iterm2\""));
         assert!(!s.contains("__beforepaste_start_title_keepalive"));
         assert!(!s.contains("sleep 0.5"));
         assert!(!s.contains("alias codex"));
@@ -548,6 +572,7 @@ mod tests {
         let s = render_shell_hook_snippet(Shell::Fish, &["claude"], "/tmp/beforepaste");
         assert!(s.contains("function __beforepaste_preexec --on-event fish_preexec"));
         assert!(s.contains("set -g __beforepaste_ai_bins 'claude'"));
+        assert!(s.contains("set -g __beforepaste_terminal_app iterm2"));
         assert!(!s.contains("function __beforepaste_start_title_keepalive"));
         assert!(!s.contains("function __beforepaste_stop_title_keepalive"));
         assert!(!s.contains("alias claude"));

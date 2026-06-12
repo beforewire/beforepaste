@@ -23,7 +23,9 @@ mod imp {
     use crate::config::Config;
     use crate::targets::{self, TargetSurface};
     use crate::watch::terminal_state;
-    use std::process::Command;
+    use beforepaste::ai_command;
+    use beforepaste::vscode_surface::{self, VscodeSurface};
+    use std::process::{Command, Stdio};
 
     const BROWSERS: &[&str] = &[
         "com.google.Chrome",
@@ -110,6 +112,51 @@ mod imp {
             })
     }
 
+    fn iterm2_current_session_id() -> Option<String> {
+        osascript(
+            "tell application \"iTerm2\" to get unique id of current session of current window",
+        )
+        .or_else(|| {
+            osascript(
+                "tell application \"iTerm2\" to tell current window to get unique id of current session",
+            )
+        })
+    }
+
+    fn iterm2_current_session_variable(name: &str) -> Option<String> {
+        let escaped = name.replace('\\', "\\\\").replace('"', "\\\"");
+        osascript(&format!(
+            "tell application \"iTerm2\" to tell current session of current window to get variable \"{escaped}\""
+        ))
+        .or_else(|| {
+            osascript(&format!(
+                "tell application \"iTerm2\" to tell current session of current window to get variable named \"{escaped}\""
+            ))
+        })
+    }
+
+    fn iterm2_current_session_ai_cli() -> Option<String> {
+        for name in [
+            "jobName",
+            "session.jobName",
+            "commandLine",
+            "session.commandLine",
+            "name",
+            "session.name",
+        ] {
+            let Some(value) = iterm2_current_session_variable(name) else {
+                continue;
+            };
+            if let Some(kind) = ai_command::classify_command_line(&value) {
+                return Some(kind.to_string());
+            }
+            if let Some(kind) = terminal_ai_cli(&value) {
+                return Some(kind.to_string());
+            }
+        }
+        None
+    }
+
     /// Known AI CLIs set focused terminal titles that are much more specific
     /// than a normal shell/editor title. Keep this positive-only: a generic
     /// terminal stays manual-only unless the focused pane advertises an AI TUI.
@@ -153,6 +200,39 @@ mod imp {
         None
     }
 
+    fn ai_process_kind_for_tty(tty: &str) -> Option<String> {
+        let tty = tty.rsplit('/').next()?.trim();
+        if tty.is_empty() {
+            return None;
+        }
+        let output = Command::new("/bin/ps")
+            .args(["-t", tty, "-o", "comm=", "-o", "command="])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .ok()?;
+        if !output.status.success() || output.stdout.is_empty() {
+            return None;
+        }
+
+        let mut kinds = Vec::<String>::new();
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let kind = ai_command::classify_binary_name(line)
+                .or_else(|| ai_command::classify_command_line(line));
+            if let Some(kind) = kind {
+                let kind = kind.to_string();
+                if !kinds.contains(&kind) {
+                    kinds.push(kind);
+                }
+            }
+        }
+        if kinds.len() == 1 {
+            kinds.pop()
+        } else {
+            None
+        }
+    }
+
     fn host_of(url: &str) -> Option<String> {
         let after = url.split("://").nth(1)?;
         let authority = after.split('/').next()?;
@@ -193,11 +273,30 @@ mod imp {
                     }
                 }
             } else if bundle == "com.googlecode.iterm2" {
+                if let Some(session_id) = iterm2_current_session_id() {
+                    if let Ok(Some(target)) =
+                        terminal_state::active_for_terminal_id("iterm2", &session_id)
+                    {
+                        if targets::enabled_on(&config, TargetSurface::Terminal, &target.kind) {
+                            return Detection::Ai(format!("cli:{}", target.kind));
+                        }
+                    }
+                }
                 if let Some(tty) = iterm2_current_session_tty() {
                     if let Ok(Some(target)) = terminal_state::active_for_tty(&tty) {
                         if targets::enabled_on(&config, TargetSurface::Terminal, &target.kind) {
                             return Detection::Ai(format!("cli:{}", target.kind));
                         }
+                    }
+                    if let Some(cli) = ai_process_kind_for_tty(&tty) {
+                        if targets::enabled_on(&config, TargetSurface::Terminal, &cli) {
+                            return Detection::Ai(format!("cli:{cli}"));
+                        }
+                    }
+                }
+                if let Some(cli) = iterm2_current_session_ai_cli() {
+                    if targets::enabled_on(&config, TargetSurface::Terminal, &cli) {
+                        return Detection::Ai(format!("cli:{cli}"));
                     }
                 }
             }
@@ -218,10 +317,21 @@ mod imp {
             return Detection::Terminal;
         }
         if VSCODE.contains(&bundle.as_str()) {
-            if let Ok(Some(target)) = terminal_state::active_for_terminal_app("vscode") {
-                if targets::enabled_on(&config, TargetSurface::Vscode, &target.kind) {
-                    return Detection::Ai(format!("cli:{}", target.kind));
+            match vscode_surface::focused_surface() {
+                VscodeSurface::Editor | VscodeSurface::Other => return Detection::Other,
+                VscodeSurface::AiView(kind) => {
+                    if targets::enabled_on(&config, TargetSurface::Vscode, &kind) {
+                        return Detection::Ai(format!("cli:{kind}"));
+                    }
                 }
+                VscodeSurface::Terminal => {
+                    if let Ok(Some(target)) = terminal_state::active_for_vscode_terminal() {
+                        if targets::enabled_on(&config, TargetSurface::Vscode, &target.kind) {
+                            return Detection::Ai(format!("cli:{}", target.kind));
+                        }
+                    }
+                }
+                VscodeSurface::Unknown => return Detection::Other,
             }
             return Detection::Other;
         }
@@ -232,6 +342,7 @@ mod imp {
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::imp::terminal_ai_cli;
+    use beforepaste::ai_command;
 
     #[test]
     fn detects_claude_title_signature() {
@@ -280,6 +391,32 @@ mod tests {
         assert_eq!(terminal_ai_cli("vim codex-notes.md"), None);
         assert_eq!(terminal_ai_cli("working notes"), None);
         assert_eq!(terminal_ai_cli("zsh"), None);
+    }
+
+    #[test]
+    fn classifies_iterm_session_command_signals() {
+        assert_eq!(
+            ai_command::classify_command_line("codex resume abc"),
+            Some("codex")
+        );
+        assert_eq!(
+            ai_command::classify_command_line("/opt/bin/gemini"),
+            Some("gemini")
+        );
+        assert_eq!(
+            ai_command::classify_command_line("env ANTHROPIC_API_KEY=x claude"),
+            Some("claude")
+        );
+        assert_eq!(
+            ai_command::classify_command_line("pnpm dlx gemini-cli"),
+            Some("gemini")
+        );
+        assert_eq!(
+            ai_command::classify_command_line("continue"),
+            Some("continue")
+        );
+        assert_eq!(ai_command::classify_command_line("vim .env"), None);
+        assert_eq!(ai_command::classify_command_line("codex-notes.md"), None);
     }
 }
 

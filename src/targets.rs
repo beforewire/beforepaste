@@ -60,6 +60,10 @@ pub const CLI_TARGET_CATALOG: &[CliTargetCatalogEntry] = &[
         label: "aider",
     },
     CliTargetCatalogEntry {
+        id: "continue",
+        label: "Continue CLI",
+    },
+    CliTargetCatalogEntry {
         id: "opencode",
         label: "OpenCode",
     },

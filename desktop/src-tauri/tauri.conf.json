@@ -19,7 +19,7 @@
         "label": "main",
         "title": "BeforePaste Preferences",
         "width": 820,
-        "height": 680,
+        "height": 560,
         "visible": false,
         "resizable": true
       }
@@ -74,7 +74,8 @@
       }
     },
     "macOS": {
-      "signingIdentity": "-"
+      "infoPlist": "Info.plist",
+      "signingIdentity": "BeforePaste Dev Code Signing"
     }
   }
 }

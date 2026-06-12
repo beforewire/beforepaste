@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context};
+use beforepaste::ai_command;
 use serde::{Deserialize, Serialize};
 
 use crate::config;
@@ -19,6 +20,8 @@ pub struct TerminalTarget {
     pub terminal_app: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vscode_surface: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vscode_window_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -59,6 +62,7 @@ pub fn enter(
         cwd: cwd.display().to_string(),
         terminal_app: clean_optional(identity.terminal_app),
         terminal_id: clean_optional(identity.terminal_id),
+        vscode_surface: None,
         vscode_window_id: clean_optional(identity.vscode_window_id),
         vscode_terminal_id: clean_optional(identity.vscode_terminal_id),
         updated_at: now,
@@ -111,12 +115,27 @@ pub fn active_for_terminal_id(
 }
 
 #[cfg(any(target_os = "macos", test))]
+#[allow(dead_code)]
 pub fn active_for_terminal_app(terminal_app: &str) -> anyhow::Result<Option<TerminalTarget>> {
     let terminal_app = terminal_app.trim();
     if terminal_app.is_empty() {
         return Ok(None);
     }
     active_for_identity(|target| target.terminal_app.as_deref() == Some(terminal_app))
+}
+
+#[cfg(any(target_os = "macos", test))]
+pub fn active_for_vscode_terminal() -> anyhow::Result<Option<TerminalTarget>> {
+    active_for_identity(|target| {
+        target.terminal_app.as_deref() == Some("vscode") && !is_vscode_ai_view_target(target)
+    })
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn is_vscode_ai_view_target(target: &TerminalTarget) -> bool {
+    target.vscode_surface.as_deref() == Some("ai-view")
+        || target.terminal_id.as_deref() == Some("ai-view")
+        || target.vscode_terminal_id.as_deref() == Some("ai-view")
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -149,46 +168,7 @@ fn active_for_identity(
 }
 
 pub fn classify_command(cmd: &str) -> Option<String> {
-    for word in cmd.split_whitespace() {
-        let word = word.trim_matches(|c: char| matches!(c, '\'' | '"' | '`'));
-        if should_skip_word(word) {
-            continue;
-        }
-        let command = word.rsplit('/').next()?;
-        return classify_binary_name(command);
-    }
-    None
-}
-
-fn classify_binary_name(command: &str) -> Option<String> {
-    let command = command
-        .trim()
-        .trim_end_matches(".exe")
-        .trim_end_matches(".cmd")
-        .trim_end_matches(".bat")
-        .to_ascii_lowercase();
-    if command.contains('.') {
-        return None;
-    }
-    for kind in ["codex", "gemini", "claude", "aider", "continue", "opencode"] {
-        if command == kind
-            || command
-                .strip_prefix(kind)
-                .is_some_and(|rest| rest.starts_with('-') || rest.starts_with('_'))
-        {
-            return Some(kind.to_string());
-        }
-    }
-    None
-}
-
-fn should_skip_word(word: &str) -> bool {
-    word.contains('=')
-        || matches!(
-            word,
-            "command" | "builtin" | "exec" | "noglob" | "env" | "sudo"
-        )
-        || word.starts_with('-')
+    ai_command::classify_command_line(cmd).map(str::to_string)
 }
 
 fn clean_optional(value: Option<String>) -> Option<String> {
@@ -428,8 +408,18 @@ mod tests {
             Some("codex".to_string())
         );
         assert_eq!(classify_command("claude.exe"), Some("claude".to_string()));
+        assert_eq!(classify_command("continue"), Some("continue".to_string()));
+        assert_eq!(
+            classify_command("npx -y @openai/codex"),
+            Some("codex".to_string())
+        );
+        assert_eq!(
+            classify_command("zsh -lc 'opencode run'"),
+            Some("opencode".to_string())
+        );
         assert_eq!(classify_command("vim .env"), None);
         assert_eq!(classify_command("codex-notes.md"), None);
+        assert_eq!(classify_command("cat codex"), None);
     }
 
     #[test]
@@ -501,5 +491,40 @@ mod tests {
         }
 
         assert!(active_for_terminal_app("vscode").unwrap().is_none());
+    }
+
+    #[test]
+    #[serial]
+    fn active_for_vscode_terminal_ignores_ai_view_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = ConfigHomeGuard::set(dir.path());
+        enter(
+            "/dev/ttys001",
+            "codex",
+            Path::new("/tmp/beforepaste"),
+            TerminalIdentity {
+                terminal_app: Some("vscode".to_string()),
+                terminal_id: Some("vscode-terminal-1".to_string()),
+                ..TerminalIdentity::default()
+            },
+            60,
+        )
+        .unwrap();
+        enter(
+            "/dev/ttys002",
+            "codex",
+            Path::new("/tmp/beforepaste"),
+            TerminalIdentity {
+                terminal_app: Some("vscode".to_string()),
+                terminal_id: Some("ai-view".to_string()),
+                vscode_terminal_id: Some("ai-view".to_string()),
+                ..TerminalIdentity::default()
+            },
+            60,
+        )
+        .unwrap();
+
+        let target = active_for_vscode_terminal().unwrap().unwrap();
+        assert_eq!(target.terminal_id.as_deref(), Some("vscode-terminal-1"));
     }
 }

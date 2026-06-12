@@ -1,3 +1,4 @@
+pub mod ai_command;
 pub mod ai_tui;
 pub mod clipboard;
 pub mod config;
@@ -11,6 +12,7 @@ pub mod shell_rc;
 pub mod stats;
 pub mod targets;
 pub mod updater;
+pub mod vscode_surface;
 
 /// Product name. Single source so window/notification/shortcut labels stay
 /// consistent; deliberately not localized (it is a proper noun).

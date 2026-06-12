@@ -5,12 +5,13 @@ use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-#[cfg(target_os = "macos")]
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
 
+#[cfg(target_os = "macos")]
+use crate::ai_command;
 use crate::clipboard::ClipboardMonitor;
 use crate::config::{self, Config};
 use crate::detector::Detector;
@@ -19,6 +20,8 @@ use crate::redact_cli;
 use crate::stats;
 #[cfg(target_os = "macos")]
 use crate::targets::{self, TargetSurface};
+#[cfg(target_os = "macos")]
+use crate::vscode_surface::{self, VscodeSurface};
 
 const TARGET_CACHE_FILE: &str = "target-state.json";
 const MAX_INPUT_BYTES: usize = 1024 * 1024;
@@ -26,6 +29,8 @@ const RESTORE_DELAY: Duration = Duration::from_millis(900);
 #[cfg(target_os = "macos")]
 const AI_PROCESS_SCAN_CACHE_MS: u64 = 2_000;
 static SYSTEM_PASTE_BYPASS_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
+static RESTORE_GENERATION: AtomicU64 = AtomicU64::new(0);
+static PENDING_RESTORE: OnceLock<Mutex<Option<RestoreTicket>>> = OnceLock::new();
 #[cfg(target_os = "macos")]
 static AI_PROCESS_CWD_CACHE: OnceLock<Mutex<AiProcessCwdCache>> = OnceLock::new();
 
@@ -52,6 +57,8 @@ struct TerminalTarget {
     terminal_app: Option<String>,
     #[serde(default)]
     terminal_id: Option<String>,
+    #[serde(default)]
+    vscode_surface: Option<String>,
     expires_at: u64,
 }
 
@@ -59,6 +66,13 @@ struct TerminalTarget {
 pub enum RestoreMode {
     Sync,
     Async,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RestoreTicket {
+    generation: u64,
+    original: String,
+    redacted: String,
 }
 
 pub struct Engine {
@@ -119,7 +133,7 @@ fn paste_with(
     }
     let Some(reason) = reason else {
         paste_debug("passthrough: no target");
-        return emit_system_paste();
+        return emit_non_target_paste();
     };
     paste_debug(&format!("start: reason={reason}"));
 
@@ -142,6 +156,26 @@ fn paste_with(
 
     let (redacted, names) = redact_cli::redact_with(detector, config, &text);
     if names.is_empty() || redacted == text {
+        if let Some(ticket) = refresh_pending_restore_for_redacted_text(&text) {
+            paste_debug(&format!(
+                "passthrough: pending redacted clipboard input_len={}",
+                text.len()
+            ));
+            let paste_result = emit_system_paste();
+            schedule_clipboard_restore(ticket, restore_mode);
+            return paste_result;
+        }
+        if text_looks_redacted(&text) {
+            if let Some(ticket) = rearm_restore_for_redacted_text(&mut monitor, &text)? {
+                paste_debug(&format!(
+                    "passthrough: rearmed redacted clipboard input_len={}",
+                    text.len()
+                ));
+                let paste_result = emit_system_paste();
+                schedule_clipboard_restore(ticket, restore_mode);
+                return paste_result;
+            }
+        }
         paste_debug(&format!(
             "passthrough: no redaction input_len={} output_len={}",
             text.len(),
@@ -159,7 +193,7 @@ fn paste_with(
     ));
     monitor.replace_text(&redacted)?;
     let paste_result = emit_system_paste();
-    restore_clipboard(text, redacted, restore_mode);
+    schedule_clipboard_restore(arm_clipboard_restore(text, redacted), restore_mode);
     paste_result?;
 
     stats::append(names.len() as u64);
@@ -174,16 +208,35 @@ fn paste_with(
     Ok(())
 }
 
-fn restore_clipboard(original: String, redacted: String, mode: RestoreMode) {
+fn emit_non_target_paste() -> anyhow::Result<()> {
+    if restore_pending_original_now()? {
+        paste_debug("passthrough: restored pending original for non-target");
+    }
+    emit_system_paste()
+}
+
+fn schedule_clipboard_restore(ticket: RestoreTicket, mode: RestoreMode) {
     let restore = move || {
         std::thread::sleep(RESTORE_DELAY);
+        let Some(mut pending) = PENDING_RESTORE.get().and_then(|slot| slot.lock().ok()) else {
+            return;
+        };
+        if pending
+            .as_ref()
+            .is_none_or(|current| current.generation != ticket.generation)
+        {
+            paste_debug("restore: skipped stale generation");
+            return;
+        }
         let Ok(mut monitor) = ClipboardMonitor::new(0) else {
             return;
         };
-        if monitor.read_text().as_deref() == Some(redacted.as_str()) {
-            let _ = monitor.replace_text(&original);
+        if monitor.read_text().as_deref() == Some(ticket.redacted.as_str()) {
+            let _ = monitor.replace_text(&ticket.original);
+            *pending = None;
             paste_debug("restore: original clipboard restored");
         } else {
+            *pending = None;
             paste_debug("restore: skipped because clipboard changed");
         }
     };
@@ -195,6 +248,92 @@ fn restore_clipboard(original: String, redacted: String, mode: RestoreMode) {
     }
 }
 
+fn arm_clipboard_restore(original: String, redacted: String) -> RestoreTicket {
+    let generation = RESTORE_GENERATION
+        .fetch_add(1, Ordering::SeqCst)
+        .saturating_add(1);
+    let ticket = RestoreTicket {
+        generation,
+        original,
+        redacted,
+    };
+    let slot = PENDING_RESTORE.get_or_init(|| Mutex::new(None));
+    if let Ok(mut pending) = slot.lock() {
+        *pending = Some(ticket.clone());
+    }
+    ticket
+}
+
+fn refresh_pending_restore_for_redacted_text(redacted: &str) -> Option<RestoreTicket> {
+    let slot = PENDING_RESTORE.get_or_init(|| Mutex::new(None));
+    let mut pending = slot.lock().ok()?;
+    let current = pending.as_ref()?;
+    if current.redacted != redacted {
+        return None;
+    }
+    let ticket = RestoreTicket {
+        generation: RESTORE_GENERATION
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1),
+        original: current.original.clone(),
+        redacted: current.redacted.clone(),
+    };
+    *pending = Some(ticket.clone());
+    Some(ticket)
+}
+
+fn rearm_restore_for_redacted_text(
+    monitor: &mut ClipboardMonitor,
+    redacted: &str,
+) -> anyhow::Result<Option<RestoreTicket>> {
+    let Some(current) = monitor.read_text() else {
+        return Ok(None);
+    };
+    if current == redacted {
+        return Ok(None);
+    }
+    monitor.replace_text(redacted)?;
+    Ok(Some(arm_clipboard_restore(current, redacted.to_string())))
+}
+
+fn text_looks_redacted(text: &str) -> bool {
+    text.contains("[API_KEY]")
+        || text.contains("[OPENAI_API_KEY]")
+        || text.contains("[DOTENV_SECRET_LINE]")
+        || text.contains("[LABELED_SECRET_LINE]")
+        || text.contains("[ALIYUN_ACCESS_KEY_SECRET]")
+}
+
+pub fn pending_clipboard_restore_active() -> bool {
+    PENDING_RESTORE
+        .get()
+        .and_then(|slot| slot.lock().ok())
+        .and_then(|pending| pending.as_ref().map(|_| ()))
+        .is_some()
+}
+
+fn restore_pending_original_now() -> anyhow::Result<bool> {
+    let Some(slot) = PENDING_RESTORE.get() else {
+        return Ok(false);
+    };
+    let mut pending = match slot.lock() {
+        Ok(pending) => pending,
+        Err(_) => return Ok(false),
+    };
+    let Some(ticket) = pending.clone() else {
+        return Ok(false);
+    };
+    let Ok(mut monitor) = ClipboardMonitor::new(0) else {
+        return Ok(false);
+    };
+    if monitor.read_text().as_deref() != Some(ticket.redacted.as_str()) {
+        return Ok(false);
+    }
+    monitor.replace_text(&ticket.original)?;
+    *pending = None;
+    Ok(true)
+}
+
 fn paste_debug(message: &str) {
     let path = config::ensure_base_dir().join("protected-paste.log");
     let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
@@ -204,7 +343,82 @@ fn paste_debug(message: &str) {
 }
 
 pub fn current_target_reason() -> Option<String> {
-    detect_current_target().or_else(read_target_cache)
+    let detected = detect_current_target();
+    if detected.is_some() {
+        return detected;
+    }
+
+    // The target cache is written by companion watchers and can briefly outlive
+    // a focus change. Only trust it while a terminal-like surface is frontmost;
+    // otherwise an AI CLI target can leak into Chrome, WeChat, editors, etc.
+    #[cfg(target_os = "macos")]
+    {
+        let bundle = frontmost_bundle()?;
+        if TERMINALS.contains(&bundle.as_str()) {
+            return read_cli_target_cache();
+        }
+        if VSCODE.contains(&bundle.as_str()) {
+            return match vscode_surface::focused_surface() {
+                VscodeSurface::Terminal | VscodeSurface::AiView(_) => read_cli_target_cache(),
+                VscodeSurface::Editor | VscodeSurface::Other | VscodeSurface::Unknown => None,
+            };
+        }
+        None
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        read_target_cache()
+    }
+}
+
+pub fn current_detected_target_reason() -> Option<String> {
+    detect_current_target()
+}
+
+#[cfg(target_os = "macos")]
+fn read_cli_target_cache() -> Option<String> {
+    read_target_cache().filter(|reason| reason.starts_with("cli:"))
+}
+
+#[cfg(target_os = "macos")]
+pub fn current_target_debug_snapshot() -> String {
+    let Some(bundle) = frontmost_bundle() else {
+        return "bundle=unknown".to_string();
+    };
+    if VSCODE.contains(&bundle.as_str()) {
+        let surface = vscode_surface::focused_surface().as_debug_label();
+        let target = active_vscode_terminal_target()
+            .map(|target| target.kind)
+            .unwrap_or_else(|| "none".to_string());
+        return format!("bundle={bundle} vscode_surface={surface} vscode_terminal_target={target}");
+    }
+    if bundle != "com.googlecode.iterm2" {
+        return format!("bundle={bundle}");
+    }
+
+    let session_id = iterm2_current_session_id();
+    let tty = iterm2_current_session_tty();
+    let tty_kind = tty
+        .as_deref()
+        .and_then(ai_process_kind_for_tty)
+        .unwrap_or_else(|| "none".to_string());
+    let session_kind = iterm2_current_session_ai_cli().unwrap_or_else(|| "none".to_string());
+    let cwd_kind = iterm2_current_session_working_directory()
+        .as_deref()
+        .and_then(ai_process_kind_for_cwd)
+        .unwrap_or_else(|| "none".to_string());
+
+    format!(
+        "bundle={bundle} iterm_session_id={} tty={} tty_kind={tty_kind} session_kind={session_kind} cwd_kind={cwd_kind}",
+        session_id.as_deref().unwrap_or("none"),
+        tty.as_deref().unwrap_or("none")
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn current_target_debug_snapshot() -> String {
+    "platform=unsupported".to_string()
 }
 
 fn read_target_cache() -> Option<String> {
@@ -248,10 +462,34 @@ fn detect_current_target() -> Option<String> {
                 }
             }
         } else if bundle == "com.googlecode.iterm2" {
+            if let Some(session_id) = iterm2_current_session_id() {
+                if let Some(target) = active_terminal_by_id("iterm2", &session_id) {
+                    if targets::enabled_on(&config, TargetSurface::Terminal, &target.kind) {
+                        return Some(format!("cli:{}", target.kind));
+                    }
+                }
+            }
             if let Some(tty) = iterm2_current_session_tty() {
                 if let Some(target) = read_terminal_target_by_tty(&tty) {
                     if targets::enabled_on(&config, TargetSurface::Terminal, &target.kind) {
                         return Some(format!("cli:{}", target.kind));
+                    }
+                }
+                if let Some(kind) = ai_process_kind_for_tty(&tty) {
+                    if targets::enabled_on(&config, TargetSurface::Terminal, &kind) {
+                        return Some(format!("cli:{kind}"));
+                    }
+                }
+            }
+            if let Some(kind) = iterm2_current_session_ai_cli() {
+                if targets::enabled_on(&config, TargetSurface::Terminal, &kind) {
+                    return Some(format!("cli:{kind}"));
+                }
+            }
+            if let Some(cwd) = iterm2_current_session_working_directory() {
+                if let Some(kind) = ai_process_kind_for_cwd(&cwd) {
+                    if targets::enabled_on(&config, TargetSurface::Terminal, &kind) {
+                        return Some(format!("cli:{kind}"));
                     }
                 }
             }
@@ -271,10 +509,22 @@ fn detect_current_target() -> Option<String> {
         return None;
     }
     if VSCODE.contains(&bundle.as_str()) {
-        if let Some(target) = active_terminal_by_app("vscode") {
-            if targets::enabled_on(&config, TargetSurface::Vscode, &target.kind) {
-                return Some(format!("cli:{}", target.kind));
+        match vscode_surface::focused_surface() {
+            VscodeSurface::Editor | VscodeSurface::Other => return None,
+            VscodeSurface::AiView(kind) => {
+                if targets::enabled_on(&config, TargetSurface::Vscode, &kind) {
+                    return Some(format!("cli:{kind}"));
+                }
+                return None;
             }
+            VscodeSurface::Terminal => {
+                if let Some(target) = active_vscode_terminal_target() {
+                    if targets::enabled_on(&config, TargetSurface::Vscode, &target.kind) {
+                        return Some(format!("cli:{}", target.kind));
+                    }
+                }
+            }
+            VscodeSurface::Unknown => return None,
         }
     }
     None
@@ -386,6 +636,62 @@ fn iterm2_current_session_tty() -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
+fn iterm2_current_session_id() -> Option<String> {
+    osascript("tell application \"iTerm2\" to get unique id of current session of current window")
+        .or_else(|| {
+            osascript(
+                "tell application \"iTerm2\" to tell current window to get unique id of current session",
+            )
+        })
+}
+
+#[cfg(target_os = "macos")]
+fn iterm2_current_session_variable(name: &str) -> Option<String> {
+    let escaped = name.replace('\\', "\\\\").replace('"', "\\\"");
+    osascript(&format!(
+        "tell application \"iTerm2\" to tell current session of current window to get variable \"{escaped}\""
+    ))
+    .or_else(|| {
+        osascript(&format!(
+            "tell application \"iTerm2\" to tell current session of current window to get variable named \"{escaped}\""
+        ))
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn iterm2_current_session_working_directory() -> Option<String> {
+    for name in ["path", "session.path"] {
+        if let Some(path) = iterm2_current_session_variable(name).filter(|value| path_like(value)) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn iterm2_current_session_ai_cli() -> Option<String> {
+    for name in [
+        "jobName",
+        "session.jobName",
+        "commandLine",
+        "session.commandLine",
+        "name",
+        "session.name",
+    ] {
+        let Some(value) = iterm2_current_session_variable(name) else {
+            continue;
+        };
+        if let Some(kind) = ai_command::classify_command_line(&value) {
+            return Some(kind.to_string());
+        }
+        if let Some(kind) = terminal_ai_cli(&value) {
+            return Some(kind.to_string());
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
 fn host_of(url: &str) -> Option<String> {
     let after = url.split("://").nth(1)?;
     let authority = after.split('/').next()?;
@@ -454,6 +760,39 @@ fn ai_process_kind_for_cwd(cwd: &str) -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
+fn ai_process_kind_for_tty(tty: &str) -> Option<String> {
+    let tty = tty.rsplit('/').next()?.trim();
+    if tty.is_empty() {
+        return None;
+    }
+    let output = Command::new("/bin/ps")
+        .args(["-t", tty, "-o", "comm=", "-o", "command="])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() || output.stdout.is_empty() {
+        return None;
+    }
+
+    let mut kinds = Vec::<String>::new();
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let kind = classify_ai_process_name(line)
+            .or_else(|| ai_command::classify_command_line(line).map(str::to_string));
+        if let Some(kind) = kind {
+            if !kinds.contains(&kind) {
+                kinds.push(kind);
+            }
+        }
+    }
+    if kinds.len() == 1 {
+        kinds.pop()
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn cached_ai_process_cwds() -> Vec<(String, String)> {
     let now = now_millis();
     let cache = AI_PROCESS_CWD_CACHE.get_or_init(|| Mutex::new(AiProcessCwdCache::default()));
@@ -471,8 +810,8 @@ fn cached_ai_process_cwds() -> Vec<(String, String)> {
 fn scan_ai_process_cwds() -> Vec<(String, String)> {
     let output = Command::new("/usr/sbin/lsof")
         .args([
-            "-a", "-c", "codex", "-c", "gemini", "-c", "claude", "-c", "aider", "-c", "opencode",
-            "-d", "cwd", "-Fn", "-Fc",
+            "-a", "-c", "codex", "-c", "gemini", "-c", "claude", "-c", "aider", "-c", "continue",
+            "-c", "opencode", "-d", "cwd", "-Fn", "-Fc",
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -511,22 +850,7 @@ fn parse_lsof_process_cwds(output: &str) -> Vec<(String, String)> {
 
 #[cfg(target_os = "macos")]
 fn classify_ai_process_name(name: &str) -> Option<String> {
-    let normalized = name
-        .trim()
-        .trim_end_matches(".exe")
-        .trim_end_matches(".cmd")
-        .trim_end_matches(".bat")
-        .to_ascii_lowercase();
-    for kind in ["codex", "gemini", "claude", "aider", "opencode"] {
-        if normalized == kind
-            || normalized
-                .strip_prefix(kind)
-                .is_some_and(|rest| rest.starts_with('-') || rest.starts_with('_'))
-        {
-            return Some(kind.to_string());
-        }
-    }
-    None
+    ai_command::classify_binary_name(name).map(str::to_string)
 }
 
 #[cfg(target_os = "macos")]
@@ -540,6 +864,15 @@ fn normalize_path(path: &str) -> String {
 }
 
 #[cfg(target_os = "macos")]
+fn path_like(value: &str) -> bool {
+    let value = value.trim();
+    value == "/"
+        || value.starts_with("~/")
+        || value.starts_with("/Users/")
+        || value.starts_with('/')
+}
+
+#[cfg(target_os = "macos")]
 fn active_terminal_by_id(terminal_app: &str, terminal_id: &str) -> Option<TerminalTarget> {
     active_terminal(|target| {
         target.terminal_app.as_deref() == Some(terminal_app)
@@ -548,8 +881,16 @@ fn active_terminal_by_id(terminal_app: &str, terminal_id: &str) -> Option<Termin
 }
 
 #[cfg(target_os = "macos")]
-fn active_terminal_by_app(terminal_app: &str) -> Option<TerminalTarget> {
-    active_terminal(|target| target.terminal_app.as_deref() == Some(terminal_app))
+fn active_vscode_terminal_target() -> Option<TerminalTarget> {
+    active_terminal(|target| {
+        target.terminal_app.as_deref() == Some("vscode") && !is_vscode_ai_view_target(target)
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn is_vscode_ai_view_target(target: &TerminalTarget) -> bool {
+    target.vscode_surface.as_deref() == Some("ai-view")
+        || target.terminal_id.as_deref() == Some("ai-view")
 }
 
 #[cfg(target_os = "macos")]
@@ -684,12 +1025,24 @@ tell application "System Events"
   click menu item "Paste" of menu "Edit" of menu bar 1 of frontProc
 end tell
 "#;
-    let status = Command::new("/usr/bin/osascript")
+    let mut child = Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()?;
+        .spawn()?;
+    let start = std::time::Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if start.elapsed() >= Duration::from_millis(700) {
+            let _ = child.kill();
+            let _ = child.wait();
+            anyhow::bail!("system paste timed out");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
     if status.success() {
         Ok(())
     } else {
@@ -758,8 +1111,34 @@ fn now_millis() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(target_os = "macos")]
     use super::*;
+    use serial_test::serial;
+
+    fn clear_pending_restore_for_test() {
+        RESTORE_GENERATION.store(0, Ordering::SeqCst);
+        let slot = PENDING_RESTORE.get_or_init(|| Mutex::new(None));
+        *slot.lock().unwrap() = None;
+    }
+
+    #[test]
+    #[serial]
+    fn repeated_redacted_paste_refreshes_restore_generation() {
+        clear_pending_restore_for_test();
+        let first = arm_clipboard_restore("raw-secret".to_string(), "[API_KEY]".to_string());
+        let refreshed = refresh_pending_restore_for_redacted_text("[API_KEY]").unwrap();
+
+        assert!(refreshed.generation > first.generation);
+        assert_eq!(refreshed.original, "raw-secret");
+        assert_eq!(refreshed.redacted, "[API_KEY]");
+        assert!(refresh_pending_restore_for_redacted_text("[OTHER]").is_none());
+    }
+
+    #[test]
+    fn recognizes_redaction_markers_for_restore_race_guard() {
+        assert!(text_looks_redacted("api_key: [API_KEY]"));
+        assert!(text_looks_redacted("OPENAI_API_KEY=[OPENAI_API_KEY]"));
+        assert!(!text_looks_redacted("plain text"));
+    }
 
     #[cfg(target_os = "macos")]
     #[test]
@@ -791,5 +1170,32 @@ mod tests {
                 )
             ]
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn classifies_iterm_session_command_signals() {
+        assert_eq!(
+            ai_command::classify_command_line("codex resume abc"),
+            Some("codex")
+        );
+        assert_eq!(
+            ai_command::classify_command_line("/opt/bin/gemini"),
+            Some("gemini")
+        );
+        assert_eq!(
+            ai_command::classify_command_line("env ANTHROPIC_API_KEY=x claude"),
+            Some("claude")
+        );
+        assert_eq!(
+            ai_command::classify_command_line("npx -y @openai/codex"),
+            Some("codex")
+        );
+        assert_eq!(
+            ai_command::classify_command_line("continue"),
+            Some("continue")
+        );
+        assert_eq!(ai_command::classify_command_line("vim .env"), None);
+        assert_eq!(ai_command::classify_command_line("codex-notes.md"), None);
     }
 }

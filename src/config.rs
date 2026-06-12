@@ -203,7 +203,7 @@ fn default_true() -> bool {
 }
 
 fn default_protect_normal_paste() -> bool {
-    cfg!(target_os = "macos")
+    false
 }
 
 fn default_redact_style() -> RedactStyle {

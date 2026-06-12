@@ -8,375 +8,186 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="bp-window">
+    <main class="bp-window" aria-label="BeforePaste Preferences">
       <aside class="bp-sidebar" aria-label="Preferences sections">
         <div class="bp-app-title">
           <img class="bp-app-icon" src="./assets/beforepaste-icon.svg" alt="" aria-hidden="true" />
           <div>
             <strong>BeforePaste</strong>
-            <span>Preferences</span>
+            <span id="app-subtitle">Keep secrets out of AI prompts.</span>
           </div>
         </div>
 
         <nav class="bp-nav">
           <button class="bp-nav-item is-active" data-panel="paste" type="button">
             <span class="bp-nav-icon">⌘</span>
-            <span>Paste</span>
+            <span>Safe Paste</span>
           </button>
           <button class="bp-nav-item" data-panel="redaction" type="button">
             <span class="bp-nav-icon">●</span>
-            <span>Redaction</span>
+            <span>Local Rules</span>
           </button>
-          <button class="bp-nav-item" data-panel="targets" type="button">
-            <span class="bp-nav-icon">▣</span>
-            <span>Targets</span>
-          </button>
-          <button class="bp-nav-item" data-panel="doctor" type="button">
-            <span class="bp-nav-icon">✓</span>
-            <span>Doctor</span>
-          </button>
-          <button class="bp-nav-item" data-panel="updates" type="button">
-            <span class="bp-nav-icon">↻</span>
-            <span>Updates</span>
-          </button>
-          <button class="bp-nav-item" data-panel="advanced" type="button">
-            <span class="bp-nav-icon">⋯</span>
-            <span>Advanced</span>
+          <button class="bp-nav-item" data-panel="app" type="button">
+            <span class="bp-nav-icon">⚙</span>
+            <span>App &amp; Updates</span>
           </button>
         </nav>
+
+        <p class="bp-sidebar-note">Local redaction. No clipboard history.</p>
       </aside>
 
       <section class="bp-content">
         <header class="bp-toolbar">
-          <h1 id="panel-title">Paste</h1>
-          <span id="status" class="bp-status" role="status" aria-live="polite"></span>
+          <div>
+            <h1 id="panel-title">Safe Paste</h1>
+            <p id="panel-subtitle">Cmd+V stays unchanged. Use Safe Paste when a prompt needs redaction.</p>
+          </div>
+          <span id="ready-pill" class="bp-ready-pill">Local guard ready</span>
         </header>
 
         <section class="bp-panel is-active" data-panel-content="paste">
-          <input id="protect-normal-paste" type="checkbox" hidden />
-          <div id="setup-card" class="bp-settings-group bp-setup-card">
-            <div class="bp-setup-header">
-              <span>
-                <strong id="setup-title">Finish setup to protect paste</strong>
-                <small id="setup-copy">BeforePaste needs macOS permissions and a working shortcut before it can protect normal paste.</small>
-              </span>
-              <div class="bp-inline-actions">
-                <button id="setup-dismiss-prompt" class="bp-button bp-button-small" type="button">Do not remind me again</button>
-                <button id="setup-open-doctor" class="bp-button bp-button-small" type="button">Open Doctor</button>
-              </div>
-            </div>
-            <div class="bp-setup-checks" aria-label="Setup checklist">
-              <div class="bp-setup-check">
-                <span>
-                  <strong id="setup-permissions-title">macOS permissions</strong>
-                  <small id="setup-permissions-copy">Safe Paste needs Accessibility; automatic Cmd+V also needs Input Monitoring.</small>
-                </span>
-                <div class="bp-inline-actions">
-                  <span id="setup-permissions-status" class="bp-status-pill">Checking</span>
-                  <button id="setup-open-permissions" class="bp-button bp-button-small" type="button">Open</button>
-                </div>
-              </div>
-              <div class="bp-setup-check">
-                <span>
-                  <strong id="setup-cmdv-title">Automatic Cmd+V</strong>
-                  <small id="setup-cmdv-copy">Protects normal paste only when an enabled AI target is detected.</small>
-                </span>
-                <span id="setup-cmdv-status" class="bp-status-pill">Checking</span>
-              </div>
-              <div class="bp-setup-check">
-                <span>
-                  <strong id="setup-safe-title">Safe paste shortcut</strong>
-                  <small id="setup-safe-copy">Use this shortcut when target detection is unavailable or uncertain.</small>
-                </span>
-                <span id="setup-safe-status" class="bp-status-pill">Checking</span>
-              </div>
-              <div class="bp-setup-check">
-                <span>
-                  <strong id="setup-vscode-title">VS Code extension</strong>
-                  <small id="setup-vscode-copy">Required for VS Code integrated terminal detection.</small>
-                </span>
-                <div class="bp-inline-actions">
-                  <span id="setup-vscode-status" class="bp-status-pill">Checking</span>
-                  <button id="setup-install-vscode-bridge" class="bp-button bp-button-small" type="button" hidden>Install extension</button>
-                  <button id="setup-skip-vscode-bridge" class="bp-button bp-button-small" type="button">I don't use VS Code</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <div class="bp-settings-group">
             <label class="bp-setting-row">
               <span>
-                <strong>Enable BeforePaste</strong>
-                <small>Allow protected paste shortcuts and target-aware clipboard rewriting.</small>
+                <strong>Safe Paste shortcut</strong>
+                <small>Turn on the redacted paste path. Normal paste keeps the original clipboard.</small>
               </span>
               <span class="bp-switch">
                 <input id="beforepaste-enabled" type="checkbox" />
                 <span></span>
               </span>
             </label>
-          </div>
-
-          <div class="bp-settings-group">
-            <div class="bp-list-header">
-              <strong>Mode</strong>
-              <small>Advanced is the recommended default on macOS.</small>
+            <div class="bp-setting-row">
+              <span>
+                <strong>Shortcut</strong>
+                <small>Creates a redacted clipboard payload, pastes it, then restores the original.</small>
+              </span>
+              <div class="bp-inline-actions bp-shortcut-actions">
+                <span id="shortcut-display" class="bp-keycap-group" aria-label="Safe Paste shortcut">Ctrl + Cmd + V</span>
+                <input id="force-paste-hotkey" class="bp-text-field bp-hotkey-field" type="text" spellcheck="false" aria-label="Safe Paste shortcut value" />
+                <button id="record-shortcut" class="bp-button bp-button-small" type="button">Edit Shortcut</button>
+              </div>
             </div>
-            <label class="bp-mode-row">
-              <input id="mode-advanced" name="paste-mode" type="radio" />
+            <div class="bp-setting-row">
               <span>
-                <strong id="normal-paste-title">Advanced - Protect Cmd+V</strong>
-                <small id="normal-paste-copy">Normal Cmd+V is protected in detected AI targets.</small>
+                <strong>Paste permission</strong>
+                <small>Allows BeforePaste to send the final paste event.</small>
               </span>
-              <span class="bp-status-pill is-on">Recommended</span>
-            </label>
-            <label class="bp-mode-row">
-              <input id="mode-safe-only" name="paste-mode" type="radio" />
-              <span>
-                <strong>Safe Paste Shortcut Only</strong>
-                <small>Normal Cmd+V stays unchanged. Use the safe paste shortcut for redacted paste.</small>
-              </span>
-            </label>
+              <div class="bp-inline-actions">
+                <span id="accessibility-status" class="bp-status-pill">Checking</span>
+                <button id="open-accessibility" class="bp-button bp-button-small" type="button">Open System Settings</button>
+              </div>
+            </div>
           </div>
 
-          <div class="bp-settings-group">
-            <label class="bp-setting-row">
+          <div class="bp-settings-group bp-verify-card">
+            <div class="bp-card-header">
               <span>
-                <strong>Safe paste shortcut</strong>
-                <small>Always paste a redacted copy. This remains available in every mode.</small>
+                <strong>Safe Paste preflight</strong>
+                <small>Checks detector output, shortcut registration, paste permission, and restore guard.</small>
               </span>
-              <input id="force-paste-hotkey" class="bp-text-field" type="text" />
-            </label>
+              <button id="start-verification" class="bp-button bp-button-primary" type="button">Run Verification</button>
+            </div>
+            <div class="bp-verify-grid" aria-label="Verification results">
+              <div class="bp-check-row" data-check="redaction">
+                <span class="bp-check-icon">✓</span>
+                <span>Detector</span>
+                <strong id="verify-redaction">Not run</strong>
+              </div>
+              <div class="bp-check-row" data-check="shortcut">
+                <span class="bp-check-icon">✓</span>
+                <span>Shortcut</span>
+                <strong id="verify-shortcut">Not run</strong>
+              </div>
+              <div class="bp-check-row" data-check="paste-action">
+                <span class="bp-check-icon">✓</span>
+                <span>Paste permission</span>
+                <strong id="verify-paste-action">Not run</strong>
+              </div>
+              <div class="bp-check-row" data-check="clipboard-restore">
+                <span class="bp-check-icon">✓</span>
+                <span>Restore guard</span>
+                <strong id="verify-clipboard-restore">Not run</strong>
+              </div>
+            </div>
+            <div class="bp-sample-preview">
+              <code>api_key: sk-demo-123456</code>
+              <span>→</span>
+              <code>api_key: [API_KEY]</code>
+            </div>
           </div>
+
+          <p class="bp-footer-note">BeforePaste keeps no clipboard history. Redaction runs on this Mac.</p>
         </section>
 
         <section class="bp-panel" data-panel-content="redaction">
           <div class="bp-settings-group">
-            <label class="bp-setting-row">
+            <div class="bp-setting-row bp-setting-row-stack">
               <span>
-                <strong>Redaction style</strong>
-                <small>Choose how matched values are rewritten.</small>
+                <strong>Replacement style</strong>
+                <small>Choose what an AI app sees after Safe Paste rewrites a match.</small>
               </span>
-              <select id="redact-style" class="bp-select">
-                <option value="Marker">Marker</option>
-                <option value="Typed">Typed labels</option>
-                <option value="Placeholder">Sample values</option>
-                <option value="Drop">Remove values</option>
+              <div id="redact-style-control" class="bp-segmented" role="group" aria-label="Redaction style">
+                <button type="button" data-redact-style="Typed">Typed placeholders</button>
+                <button type="button" data-redact-style="Placeholder">Mask</button>
+                <button type="button" data-redact-style="Drop">Remove</button>
+              </div>
+              <select id="redact-style" hidden>
+                <option value="Typed">Typed placeholders</option>
+                <option value="Placeholder">Mask</option>
+                <option value="Drop">Remove</option>
               </select>
-            </label>
-            <label class="bp-setting-row">
+              <input id="redact-pattern" type="hidden" value="[REDACTED]" />
+            </div>
+          </div>
+
+          <div class="bp-settings-group bp-preview-card">
+            <div class="bp-card-header bp-card-header-plain">
               <span>
-                <strong>Custom marker</strong>
-                <small>Text used when redaction style is set to Marker.</small>
+                <strong>Paste preview</strong>
+                <small>Raw clipboard values become named placeholders before paste.</small>
               </span>
-              <input id="redact-pattern" class="bp-text-field" type="text" />
-            </label>
+            </div>
+            <div class="bp-preview-block">
+              <div>
+                <span>Before</span>
+                <code>api_key: sk-demo-123456</code>
+                <code>OPENAI_API_KEY=sk-proj-demo</code>
+              </div>
+              <div>
+                <span>After</span>
+                <code id="preview-api-key">api_key: [API_KEY]</code>
+                <code id="preview-openai-key">OPENAI_API_KEY=[OPENAI_API_KEY]</code>
+              </div>
+            </div>
           </div>
 
           <div class="bp-settings-group">
-            <label class="bp-setting-row">
-              <span>
-                <strong>Detection sensitivity</strong>
-                <small>Higher values catch more patterns and may redact more aggressively.</small>
-              </span>
-              <input id="sensitivity" class="bp-range" type="range" min="1" max="5" step="1" />
-            </label>
-            <label class="bp-setting-row">
-              <span>
-                <strong>Deep scan</strong>
-                <small>Scan structured payloads and embedded secret shapes.</small>
-              </span>
-              <span class="bp-switch">
-                <input id="deep-scan" type="checkbox" />
-                <span></span>
-              </span>
-            </label>
-            <label class="bp-setting-row">
-              <span>
-                <strong>Entropy scan</strong>
-                <small>Detect unknown high-entropy tokens. This can increase false positives.</small>
-              </span>
-              <span class="bp-switch">
-                <input id="entropy-scan" type="checkbox" />
-                <span></span>
-              </span>
-            </label>
-          </div>
-        </section>
-
-        <section class="bp-panel" data-panel-content="targets">
-          <div class="bp-settings-group">
-            <div class="bp-setting-row bp-setting-row-stack">
-              <span>
-                <strong>Protection whitelist</strong>
-                <small>BeforePaste only protects the checked apps, websites, and terminal contexts.</small>
-              </span>
-              <div id="target-list" class="bp-target-list"></div>
-            </div>
-          </div>
-
-          <div id="vscode-bridge-parking" hidden>
-            <span id="vscode-bridge-status" class="bp-status-pill">Checking</span>
-            <button id="install-vscode-bridge" class="bp-button bp-button-small" type="button">Install extension</button>
-          </div>
-        </section>
-
-        <section class="bp-panel" data-panel-content="updates">
-          <input id="check-updates" type="checkbox" hidden />
-          <input id="auto-install" type="checkbox" hidden />
-          <div class="bp-settings-group">
-            <div class="bp-setting-row bp-setting-row-stack">
-              <span>
-                <strong>Desktop updates</strong>
-                <small>Checks GitHub Releases and reminds you to download newer builds. It does not auto-install updates.</small>
-              </span>
-              <div id="update-status-card" class="bp-update-card is-muted">
-                <span>
-                  <strong id="update-status-title">Checking for updates</strong>
-                  <small id="update-status-copy">BeforePaste checks GitHub Releases and only reminds you when a newer build is available.</small>
-                </span>
-              </div>
-              <div class="bp-button-row">
-                <button id="check-update" class="bp-button" type="button">Check for update</button>
-                <button id="download-update" class="bp-button" type="button" hidden>Download latest build</button>
-                <button id="skip-update" class="bp-button" type="button" hidden>Skip this version</button>
-                <button id="remind-update-later" class="bp-button" type="button" hidden>Remind me later</button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="bp-panel bp-panel-doctor" data-panel-content="doctor">
-          <div class="bp-settings-group bp-doctor-overview">
-            <div class="bp-doctor-summary">
-              <span>
-                <strong id="doctor-summary-title">Checking protection</strong>
-                <small id="doctor-summary-copy">Checks the selected paste mode, shortcuts, target detection, and permissions.</small>
-              </span>
-              <button id="doctor-refresh" class="bp-button" type="button">Refresh status</button>
-            </div>
-            <div class="bp-doctor-facts" aria-label="Protection status">
-              <div class="bp-doctor-fact">
-                <span>Target</span>
-                <strong id="doctor-current-target">-</strong>
-              </div>
-              <div class="bp-doctor-fact">
-                <span id="doctor-normal-paste-label">Cmd+V</span>
-                <strong id="doctor-cmdv">-</strong>
-              </div>
-              <div class="bp-doctor-fact">
-                <span>Safe paste</span>
-                <strong id="doctor-force-paste">-</strong>
-              </div>
-            </div>
-          </div>
-
-          <div class="bp-settings-group bp-doctor-permissions">
             <div class="bp-list-header">
-              <strong>Permission checks</strong>
-              <small>After a preview update, reset old macOS permission records if Doctor still reports missing access.</small>
+              <strong>Local detectors</strong>
+              <small>Built-in rules that run before any paste action.</small>
             </div>
             <div class="bp-setting-row bp-setting-row-compact">
-              <span>
-                <strong>Accessibility</strong>
-                <small>Needed to perform paste actions. Trust Doctor status if System Settings still shows an old preview build as enabled.</small>
-              </span>
-              <div class="bp-inline-actions">
-                <span id="doctor-accessibility" class="bp-diagnostic-value">-</span>
-                <button class="bp-button bp-button-small" data-open-privacy="accessibility" type="button">Open</button>
-              </div>
+              <span><strong>API keys &amp; tokens</strong></span>
+              <span class="bp-status-pill is-ok">On</span>
             </div>
             <div class="bp-setting-row bp-setting-row-compact">
-              <span>
-                <strong>Input Monitoring (Cmd+V protection)</strong>
-                <small id="input-monitoring-copy">Needed for automatic Cmd+V protection. Requesting access triggers the macOS Input Monitoring prompt.</small>
-              </span>
-              <div class="bp-inline-actions">
-                <span id="doctor-input-monitoring" class="bp-diagnostic-value">-</span>
-                <button class="bp-button bp-button-small" data-open-privacy="input_monitoring" type="button">Open</button>
-              </div>
+              <span><strong>Cloud credentials</strong></span>
+              <span class="bp-status-pill is-ok">On</span>
             </div>
             <div class="bp-setting-row bp-setting-row-compact">
-              <span>
-                <strong>App detection capability</strong>
-                <small>Needed to read browser tab and terminal context. If access looks wrong after updating, reset macOS permissions and grant access again.</small>
-              </span>
-              <div class="bp-inline-actions">
-                <span id="doctor-automation" class="bp-diagnostic-value">-</span>
-                <button class="bp-button bp-button-small" data-open-privacy="automation" type="button">Open</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="bp-settings-group bp-doctor-bridge">
-            <div class="bp-doctor-bridge-row">
-              <span>
-                <strong id="doctor-vscode-title">VS Code extension</strong>
-                <small id="doctor-vscode-copy">Install this if you paste into AI CLIs inside VS Code integrated terminals.</small>
-              </span>
-              <div class="bp-inline-actions">
-                <span id="doctor-vscode-bridge" class="bp-diagnostic-value">-</span>
-                <button id="doctor-install-vscode-bridge" class="bp-button bp-button-small" type="button" hidden>Install extension</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="bp-settings-group bp-paste-test">
-            <div class="bp-paste-test-header">
-              <span>
-                <strong id="paste-test-title">Try a protected paste</strong>
-                <small id="paste-test-copy">Copy a safe sample, then paste into the test box to verify redaction.</small>
-              </span>
-              <button id="copy-test-payload" class="bp-button bp-button-small" type="button">Copy sample</button>
-            </div>
-            <div class="bp-test-grid">
-              <label class="bp-test-box">
-                <span id="paste-test-source-label">Sample source</span>
-                <textarea id="paste-test-source" class="bp-test-area" readonly spellcheck="false"></textarea>
-              </label>
-              <label class="bp-test-box">
-                <span id="paste-test-output-label">Paste here</span>
-                <textarea id="paste-test-output" class="bp-test-area" spellcheck="false" placeholder="Paste the protected sample here"></textarea>
-              </label>
-            </div>
-            <div id="paste-test-result" class="bp-test-result is-idle" aria-live="polite">
-              <span class="bp-test-confetti" aria-hidden="true">🎉</span>
-              <span>
-                <strong id="paste-test-result-title">Waiting for test</strong>
-                <small id="paste-test-result-copy">Copy the sample, then paste it here.</small>
-              </span>
-            </div>
-            <small id="paste-test-note" class="bp-test-note">This box is treated as a temporary BeforePaste test target, so normal Cmd+V can be verified here.</small>
-          </div>
-
-          <div class="bp-settings-group bp-preview-permissions">
-            <div class="bp-permission-reset">
-              <span>
-                <strong id="doctor-reset-title">Preview build permission reset</strong>
-                <small id="doctor-reset-copy">If a newly downloaded preview build still appears unauthorized, remove the old macOS permission records and grant access again.</small>
-                <small id="doctor-reset-note">System Settings can show BeforePaste as enabled even when macOS has not accepted this exact app build. Trust Doctor status.</small>
-              </span>
-              <button id="doctor-reset-permissions" class="bp-button" type="button">Reset macOS permissions</button>
-            </div>
-          </div>
-
-          <div class="bp-settings-group bp-last-paste-group">
-            <div class="bp-setting-row bp-setting-row-stack bp-last-paste-row">
-              <span>
-                <strong>Last protected paste</strong>
-                <small>Status summary only. Secret text is never shown here.</small>
-              </span>
-              <span id="doctor-last-paste" class="bp-diagnostic-log">No paste recorded</span>
+              <span><strong>Secret environment lines</strong></span>
+              <span class="bp-status-pill is-ok">On</span>
             </div>
           </div>
         </section>
 
-        <section class="bp-panel" data-panel-content="advanced">
+        <section class="bp-panel" data-panel-content="app">
           <div class="bp-settings-group">
             <label class="bp-setting-row">
               <span>
                 <strong>Language</strong>
-                <small>Use the system language when available, or choose a language here.</small>
+                <small>English · 中文</small>
               </span>
               <select id="language" class="bp-select">
                 <option value="EN">English</option>
@@ -386,7 +197,7 @@
             <label class="bp-setting-row">
               <span>
                 <strong>Open at login</strong>
-                <small>Start BeforePaste the next time you sign in.</small>
+                <small>Start the BeforePaste menu bar guard when you sign in.</small>
               </span>
               <span class="bp-switch">
                 <input id="launch-at-login" type="checkbox" />
@@ -396,21 +207,47 @@
           </div>
 
           <div class="bp-settings-group">
-            <div class="bp-setting-row">
+            <div class="bp-list-header">
               <span>
-                <strong>Manual target</strong>
-                <small>Temporary override for AI CLIs when auto detection misses. It expires after 30 minutes.</small>
+                <strong>Readiness</strong>
+                <small>Shortcut, paste permission, and local detector status.</small>
               </span>
-              <div class="bp-segmented" role="group" aria-label="Current target">
-                <button id="clear-target" class="is-selected" type="button">Auto</button>
-                <button type="button" data-target="codex">Codex</button>
-                <button type="button" data-target="claude">Claude</button>
-                <button type="button" data-target="gemini">Gemini</button>
+              <button id="run-app-verification" class="bp-button bp-button-small" type="button">Run Verification</button>
+            </div>
+            <div class="bp-health-strip">
+              <span id="health-shortcut" class="bp-status-pill">Shortcut</span>
+              <span id="health-accessibility" class="bp-status-pill">Accessibility</span>
+              <span id="health-redaction" class="bp-status-pill">Redaction</span>
+            </div>
+          </div>
+
+          <div class="bp-settings-group">
+            <div class="bp-list-header">
+              <span>
+                <strong>Logs &amp; releases</strong>
+                <small>Local diagnostics and manual update checks.</small>
+              </span>
+            </div>
+            <div class="bp-button-row bp-maintenance-actions">
+              <button id="check-update" class="bp-button bp-button-primary" type="button">Check Releases</button>
+              <button id="open-logs" class="bp-button" type="button">Open Logs</button>
+              <button id="copy-diagnostic" class="bp-button" type="button">Copy Diagnostic Summary</button>
+            </div>
+            <div id="update-status-card" class="bp-update-card is-muted" aria-live="polite">
+              <span>
+                <strong id="update-status-title">Ready to check releases</strong>
+                <small id="update-status-copy">BeforePaste only contacts GitHub Releases when you ask it to check.</small>
+              </span>
+              <div class="bp-inline-actions">
+                <button id="download-update" class="bp-button bp-button-small" type="button" hidden>Download latest build</button>
+                <button id="skip-update" class="bp-button bp-button-small" type="button" hidden>Skip this version</button>
+                <button id="remind-update-later" class="bp-button bp-button-small" type="button" hidden>Remind me later</button>
               </div>
             </div>
           </div>
-        </section>
 
+          <p class="bp-footer-note">BeforePaste runs locally and stores no clipboard history.</p>
+        </section>
       </section>
     </main>
     <script type="module" src="./main.js"></script>
